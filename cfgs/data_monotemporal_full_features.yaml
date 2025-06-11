@@ -1,4 +1,4 @@
-data_dir: DATA_DIR_PATH
+data_dir: /data/sdkqc/WildfireSpreadTS/Data/HDF5_format
 batch_size: 64
 n_leading_observations: 1
 crop_side_length: 128
