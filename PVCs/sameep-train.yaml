@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: sameep-train
+  namespace: gp-engine-malof
+spec:
+  containers:
+    - name: dev
+      image: docker.io/saadlahrichi/fire:v6
+      command: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: "2"
+          memory: "8Gi"
+          nvidia.com/gpu: 1
+      env:
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: all
+      volumeMounts:
+        - name: fire-data
+          mountPath: /develop/data
+        - name: sameep-workspace
+          mountPath: /develop/code
+        - name: sameep-workspace
+          mountPath: /develop/results
+  volumes:
+    - name: fire-data
+      persistentVolumeClaim:
+        claimName: fire-data
+    - name: sameep-workspace
+      persistentVolumeClaim:
+        claimName: sameep-workspace
+  restartPolicy: Never
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: nvidia.com/gpu.product
+                operator: In
+                values:
+                  - NVIDIA-A10
+                  - NVIDIA-RTX-A5000
+                  - Tesla-V100-SXM2-32GB

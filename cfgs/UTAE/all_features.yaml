@@ -12,6 +12,8 @@ model:
     flatten_temporal_dimension: false
     pos_class_weight: 10
     loss_function: "BCE"
+    encoder_weights: pastis
 do_train: true
 do_test: true
 do_predict: false
+

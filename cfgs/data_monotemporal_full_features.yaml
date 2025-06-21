@@ -1,4 +1,4 @@
-data_dir: /data/sdkqc/WildfireSpreadTS/Data/HDF5_format
+data_dir: /develop/data/sameep-data/WildfireSpreadTS_HDF5_old/
 batch_size: 64
 n_leading_observations: 1
 crop_side_length: 128
