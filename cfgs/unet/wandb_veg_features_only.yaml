@@ -1,15 +1,15 @@
 # project: wildfire-prediction-resnet18
-project:  wildfire-prediction-resnet18-focal-loss_new
+project:  wildfire-prediction-resnet18-test_nautilis
 command:
   - ${env}
   - python
   - ${program}
   - -c
-  - /develop/code/cfgs/unet/res18_monotemporal.yaml
+  - cfgs/unet/res18_monotemporal.yaml
   - --trainer
-  - /develop/code/cfgs/trainer_single_gpu.yaml
+  - cfgs/trainer_single_gpu.yaml
   - --data
-  - /develop/code/cfgs/data_monotemporal_veg_features.yaml
+  - cfgs/data_monotemporal_veg_features.yaml
   - ${args}
 method: grid
 metric:
