@@ -4,6 +4,4 @@
 /*/*/*.pyc
 *.pyc
 /wandb
-commands.txt
-/commands.txt
-
+commands.md
