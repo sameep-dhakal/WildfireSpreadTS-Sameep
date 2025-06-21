@@ -45,4 +45,4 @@ parameters:
     value: true
   trainer.max_steps:
     value: 10000
-program: /develop/code/src/train.py
+program: src/train.py

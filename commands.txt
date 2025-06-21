@@ -55,27 +55,27 @@ kubectl exec -it sameep-dev-new -n gp-engine-malof -- bash
 
 
 
-kubectl cp /Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/cfgs sameep-veg-monotemporal-job-zjm5d:/develop/code -n gp-engine-malof
+kubectl cp /Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/cfgs sameep-veg-monotemporal-job-rz52b:/develop/code -n gp-engine-malof
 
 
-kubectl cp /Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/src sameep-veg-monotemporal-job-zjm5d:/develop/code -n gp-engine-malof
+kubectl cp /Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/src sameep-veg-monotemporal-job-rz52b:/develop/code -n gp-engine-malof
 
 
-kubectl cp /Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/requirements.txt  sameep-veg-monotemporal-job-zjm5d:/develop/code -n gp-engine-malof
+kubectl cp /Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/requirements.txt  sameep-veg-monotemporal-job-rz52b:/develop/code -n gp-engine-malof
 
 
 
 
 
 ### running jobs
-kubectl exec -it sameep-veg-monotemporal-job-zjm5d   -n gp-engine-malof -- bash
-kubectl delete pod sameep-veg-monotemporal-job-zjm5d   -n gp-engine-malof
-kubectl delete pod sameep-veg-monotemporal-job-zjm5d   -n gp-engine-malof
+kubectl exec -it sameep-veg-monotemporal-job-rz52b   -n gp-engine-malof -- bash
+kubectl delete pod sameep-veg-monotemporal-job-rz52b   -n gp-engine-malof
+kubectl delete pod sameep-veg-monotemporal-job-rz52b   -n gp-engine-malof
 
 
 kubectl apply -f /Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/PVCs/veg_only_monotemporal.yaml
 kubectl delete job sameep-veg-monotemporal-job -n gp-engine-malof
-kubectl describe pod sameep-veg-monotemporal-job-zjm5d  -n gp-engine-malof  
+kubectl describe pod sameep-veg-monotemporal-job-rz52b  -n gp-engine-malof  
 
 kubectl describe job sameep-veg-monotemporal-job -n gp-engine-malof
 
@@ -83,8 +83,8 @@ kubectl describe job sameep-veg-monotemporal-job -n gp-engine-malof
 kubectl get pods -n gp-engine-malof -l job-name=sameep-veg-monotemporal-job
 
 kubectl get events -n gp-engine-malof --sort-by=.metadata.creationTimestamp
-kubectl logs sameep-veg-monotemporal-job-zjm5d -n gp-engine-malof --container=dev
-kubectl logs sameep-veg-monotemporal-job-zjm5d -n gp-engine-malof
+kubectl logs sameep-veg-monotemporal-job-rz52b -n gp-engine-malof --container=dev
+kubectl logs sameep-veg-monotemporal-job-rz52b -n gp-engine-malof
 
 
 
