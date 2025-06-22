@@ -5,7 +5,7 @@ import segmentation_models_pytorch as smp
 from models.utae_paps_models.ltae import LTAE2d
 from models.utae_paps_models.utae import Temporal_Aggregator
 
-from .BaseModel import BaseModel
+from models.BaseModel import BaseModel
 
 
 class SMPTempModel(BaseModel):
