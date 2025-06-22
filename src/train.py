@@ -2,7 +2,7 @@ from pytorch_lightning.utilities import rank_zero_only
 import torch
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
 from pytorch_lightning.cli import LightningCLI
-from models import SMPModel, BaseModel, ConvLSTMLightning, LogisticRegression  # noqa
+from models import SMPModel, BaseModel, ConvLSTMLightning, LogisticRegression , SMPTempModel  # noqa
 from models import BaseModel
 import wandb
 import os
