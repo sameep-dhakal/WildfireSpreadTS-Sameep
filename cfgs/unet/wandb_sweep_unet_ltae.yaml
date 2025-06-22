@@ -14,8 +14,8 @@ metric:
   goal: maximize
   name: test_AP
 parameters:
-  # model.class_path:
-  #   value: models.SMPTempModel
+  model.class_path:
+    value: models.SMPTempModel
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
