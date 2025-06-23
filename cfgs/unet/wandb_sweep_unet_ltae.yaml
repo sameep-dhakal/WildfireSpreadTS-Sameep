@@ -21,8 +21,8 @@ parameters:
   data.data_fold_id:
     values:
       # - 0
-      - 1
-      # - 2
+      # - 1
+      - 2
       # - 3
       # - 4
       # - 5
