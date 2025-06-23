@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unet-ltae-nautilus
+project:  wildfire-prediction-unet-ltae-nautilus_make_faster
 command:
   - ${env}
   - python
@@ -20,18 +20,18 @@ parameters:
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
-      - 0
+      # - 0
       - 1
-      - 2
-      - 3
-      - 4
-      - 5
-      - 6
-      - 7
-      - 8
-      - 9
-      - 10
-      - 11
+      # - 2
+      # - 3
+      # - 4
+      # - 5
+      # - 6
+      # - 7
+      # - 8
+      # - 9
+      # - 10
+      # - 11
   data.features_to_keep:
     values:
       # - [0, 1, 2, 3, 4, 38, 39]
