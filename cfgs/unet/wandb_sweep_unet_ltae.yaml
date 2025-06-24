@@ -20,8 +20,8 @@ parameters:
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
-      - 0
-      # - 1
+      # - 0
+      - 1
       # - 2
       # - 3
       # - 4
