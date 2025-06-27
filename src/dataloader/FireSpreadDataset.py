@@ -18,7 +18,7 @@ class FireSpreadDataset(Dataset):
     def __init__(self, data_dir: str, included_fire_years: List[int], n_leading_observations: int,
                  crop_side_length: int, load_from_hdf5: bool, is_train: bool, remove_duplicate_features: bool,
                  stats_years: List[int], n_leading_observations_test_adjustment: Optional[int] = None, 
-                 features_to_keep: Optional[List[int]] = None, return_doy: bool = False):
+                 features_to_keep: Optional[List[int]] = None, return_doy: bool = False, is_pad: Optional[bool] = False):
         """_summary_
 
         Args:
@@ -34,7 +34,7 @@ class FireSpreadDataset(Dataset):
         In practice, this means that if n_leading_observations is smaller than this value, some samples are skipped. Defaults to None. If None, nothing is skipped. This is especially used for the train and val set. 
             features_to_keep (Optional[List[int]], optional): _description_. List of feature indices from 0 to 39, indicating which features to keep. Defaults to None, which means using all features.
             return_doy (bool, optional): _description_. Return the day of the year per time step, as an additional feature. Defaults to False.
-
+            is_pad (book, optional): _description_. Whether to zero-pad image to 224x224 for SwinUnet/TransUnet
         Raises:
             ValueError: _description_ Raised if input values are not in the expected ranges.
         """
@@ -51,6 +51,7 @@ class FireSpreadDataset(Dataset):
         self.n_leading_observations_test_adjustment = n_leading_observations_test_adjustment
         self.included_fire_years = included_fire_years
         self.data_dir = data_dir
+        self.is_pad = is_pad
 
         self.validate_inputs()
 
@@ -104,15 +105,14 @@ class FireSpreadDataset(Dataset):
         first_id_in_current_fire = 0
         found_fire_year = None
         found_fire_name = None
-        for fire_year in self.datapoints_per_fire:
-            if found_fire_year is None:
-                for fire_name, datapoints_in_fire in self.datapoints_per_fire[fire_year].items():
-                    if target_id - first_id_in_current_fire < datapoints_in_fire:
-                        found_fire_year = fire_year
-                        found_fire_name = fire_name
-                        break
-                    else:
-                        first_id_in_current_fire += datapoints_in_fire
+        for fire_year in self.datapoints_per_fire:    
+            for fire_name, datapoints_in_fire in self.datapoints_per_fire[fire_year].items():
+                if target_id - first_id_in_current_fire < datapoints_in_fire:
+                    found_fire_year = fire_year
+                    found_fire_name = fire_name
+                    break
+                else:
+                    first_id_in_current_fire += datapoints_in_fire
 
         in_fire_index = target_id - first_id_in_current_fire
 
@@ -180,7 +180,6 @@ class FireSpreadDataset(Dataset):
         # time step, therefore, we flatten the temporal dimension.
         if self.remove_duplicate_features and self.n_leading_observations > 1:
             x = self.flatten_and_remove_duplicate_features_(x)
-        
         # Discard features that we don't want to use
         elif self.features_to_keep is not None:
             if len(x.shape) != 4:
@@ -333,7 +332,11 @@ class FireSpreadDataset(Dataset):
             x, y = self.augment(x, y)
         else:
             x, y = self.center_crop_x32(x, y)
-
+        
+        # If using a model that expects images of larger size, use zero-padding 
+        if self.is_pad:
+            x, y = self.zero_pad_to_size(x, y)
+        
         # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
         # close in feature space, since they are also close in reality.
         x[:, self.indices_of_degree_features, ...] = torch.sin(
@@ -376,7 +379,7 @@ class FireSpreadDataset(Dataset):
         Returns:
             _type_: _description_
         """
-
+    
         # Need square crop to prevent rotation from creating/destroying data at the borders, due to uneven side lengths.
         # Try several crops, prefer the ones with most fire pixels in output, followed by most fire_pixels in input
         best_n_fire_pixels = -1
@@ -428,7 +431,6 @@ class FireSpreadDataset(Dataset):
             # Adjust angles
             x[:, self.indices_of_degree_features, ...] = (x[:, self.indices_of_degree_features,
                                                           ...] - 90 * rotate) % 360
-
         return x, y
 
     def center_crop_x32(self, x, y):
@@ -443,13 +445,30 @@ class FireSpreadDataset(Dataset):
             _type_: _description_
         """
         T, C, H, W = x.shape
-        H_new = H//32 * 32
-        W_new = W//32 * 32
+        H_new, W_new = self.crop_side_length, self.crop_side_length
+        #H_new = H//32 * 32
+        #W_new = W//32 * 32
 
         x = TF.center_crop(x, (H_new, W_new))
         y = TF.center_crop(y, (H_new, W_new))
+        
         return x, y
 
+    def zero_pad_to_size(self, x, y, desired_size=224):
+        """Zero-pads the input images to ensure they fit the desired size."""
+        T, C, H, W = x.shape
+        if H < desired_size or W < desired_size:
+            pad_height = max(0, desired_size - H)
+            pad_width = max(0, desired_size - W)
+
+            padding = (pad_width // 2, pad_width - pad_width // 2,  
+                    pad_height // 2, pad_height - pad_height // 2)  
+            
+            x = torch.nn.functional.pad(x, padding)
+            y = torch.nn.functional.pad(y, padding)
+
+        return x, y
+    
     def flatten_and_remove_duplicate_features_(self, x):
         """_summary_ For a simple U-Net, static and forecast features can be removed everywhere but in the last time step
         to reduce the number of features. Since that would result in different numbers of channels for different
@@ -546,67 +565,35 @@ class FireSpreadDataset(Dataset):
         return [datetime.strptime(img_date.replace(".tif", ""), date_format).timetuple().tm_yday for img_date in img_dates]
 
     @staticmethod
-    def map_channel_index_to_features(only_base:bool = False):
+    def map_channel_index_to_features():
         """_summary_ Maps the channel index to the feature name.
 
         Returns:
             _type_: _description_
         """
-
-        # Features before any processing
-        base_feature_names = [
-            'VIIRS band M11',
-            'VIIRS band I2',
-            'VIIRS band I1',
-            'NDVI',
-            'EVI2',
-            'Total precipitation',
-            'Wind speed',
-            'Wind direction',
-            'Minimum temperature',
-            'Maximum temperature',
-            'Energy release component',
-            'Specific humidity',
-            'Slope',
-            'Aspect',
-            'Elevation',
-            'Palmer drought severity index (PDSI)',
-            'Landcover class',
-            'Forecast: Total precipitation',
-            'Forecast: Wind speed',
-            'Forecast: Wind direction',
-            'Forecast: Temperature',
-            'Forecast: Specific humidity',
-            'Active fire']
-
-        # Different land cover classes of feature "Landcover class"
-        land_cover_classes = [
-            'Land cover: Evergreen Needleleaf Forests',
-            'Land cover: Evergreen Broadleaf Forests',
-            'Land cover: Deciduous Needleleaf Forests',
-            'Land cover: Deciduous Broadleaf Forests',
-            'Land cover: Mixed Forests',
-            'Land cover: Closed Shrublands',
-            'Land cover: Open Shrublands',
-            'Land cover: Woody Savannas',
-            'Land cover: Savannas',
-            'Land cover: Grasslands',
-            'Land cover: Permanent Wetlands',
-            'Land cover: Croplands',
-            'Land cover: Urban and Built-up Lands',
-            'Land cover: Cropland/Natural Vegetation Mosaics',
-            'Land cover: Permanent Snow and Ice',
-            'Land cover: Barren',
-            'Land cover: Water Bodies']
-        
-        if only_base:
-            # Features as in the GeoTIFF files: land cover class not expanded, no binary active fire
-            return_features = base_feature_names
-        else:
-            # Features as used by most experiments
-            return_features = base_feature_names[:16] + land_cover_classes + base_feature_names[17:] + ["Active fire (binary)"]
-
-        return dict(enumerate(return_features))
+        return {0: 'VIIRS band M11',
+                1: 'VIIRS band I2',
+                2: 'VIIRS band I1',
+                3: 'NDVI',
+                4: 'EVI2',
+                5: 'total precipitation',
+                6: 'wind speed',
+                7: 'wind direction',
+                8: 'minimum temperature',
+                9: 'maximum temperature',
+                10: 'energy release component',
+                11: 'specific humidity',
+                12: 'slope',
+                13: 'aspect',
+                14: 'elevation',
+                15: 'pdsi',
+                16: 'Landcover_Type1',
+                17: 'forecast total_precipitation',
+                18: 'forecast wind speed',
+                19: 'forecast wind direction',
+                20: 'forecast temperature',
+                21: 'forecast specific humidity',
+                22: 'active fire'}
 
     def get_generator_for_hdf5(self):
         """_summary_ Creates a generator that is used to turn the dataset into HDF5 files. It applies a few 
