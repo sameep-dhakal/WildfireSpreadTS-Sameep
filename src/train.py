@@ -31,6 +31,25 @@ class MyLightningCLI(LightningCLI):
         parser.add_argument("--ckpt_path", type=str, default=None,
                             help="Path to checkpoint to load for resuming training, for testing and predicting.")
 
+    # def before_instantiate_classes(self):
+    #     # The number of features is only known inside the data module, but we need that info to instantiate the model.
+    #     # Since datamodule and model are instantiated at the same time with LightningCLI, we need to set the number of features here.
+    #     n_features = FireSpreadDataset.get_n_features(
+    #         self.config.data.n_leading_observations,
+    #         self.config.data.features_to_keep,
+    #         self.config.data.remove_duplicate_features)
+    #     self.config.model.init_args.n_channels = n_features
+
+    #     # The exact positive class weight changes with the data fold in the data module, but the weight is needed to instantiate the model.
+    #     # Non-fire pixels are marked as missing values in the active fire feature, so we simply use that to compute the positive class weight.
+    #     train_years, _, _ = FireSpreadDataModule.split_fires(
+    #         self.config.data.data_fold_id)
+    #     _, _, missing_values_rates = get_means_stds_missing_values(train_years)
+    #     fire_rate = 1 - missing_values_rates[-1]
+    #     pos_class_weight = float(1 / fire_rate)
+
+    #     self.config.model.init_args.pos_class_weight = pos_class_weight
+
     def before_instantiate_classes(self):
         # The number of features is only known inside the data module, but we need that info to instantiate the model.
         # Since datamodule and model are instantiated at the same time with LightningCLI, we need to set the number of features here.
@@ -43,7 +62,7 @@ class MyLightningCLI(LightningCLI):
         # The exact positive class weight changes with the data fold in the data module, but the weight is needed to instantiate the model.
         # Non-fire pixels are marked as missing values in the active fire feature, so we simply use that to compute the positive class weight.
         train_years, _, _ = FireSpreadDataModule.split_fires(
-            self.config.data.data_fold_id)
+            self.config.data.data_fold_id, self.config.data.additional_data)
         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
         fire_rate = 1 - missing_values_rates[-1]
         pos_class_weight = float(1 / fire_rate)
