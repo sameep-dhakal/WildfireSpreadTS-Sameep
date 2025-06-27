@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unet-ltae-nautilus_individual
+project:  wildfire-prediction-unet-wstsplus
 command:
   - ${env}
   - python
@@ -20,8 +20,8 @@ parameters:
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
-      # - 0
-      # - 1
+      - 0
+      - 1
       - 2
       - 3
       - 4
@@ -40,9 +40,9 @@ parameters:
   data.n_leading_observations:
     value: 5
   data.remove_duplicate_features:
-    value: false
+    value: true
   trainer.max_steps: 
-    value: 10000
+    value: 10
   do_test:
     value: True
 program: src/train.py
