@@ -44,7 +44,7 @@ parameters:
   data.additional_data:
     value: True
   trainer.max_steps: 
-    value: 10
+    value: 10000
   do_test:
     value: True
 program: src/train.py
