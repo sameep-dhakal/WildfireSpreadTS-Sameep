@@ -40,7 +40,7 @@ parameters:
   data.n_leading_observations:
     value: 5
   data.remove_duplicate_features:
-    value: True
+    value: False
   data.additional_data:
     value: True
   trainer.max_steps: 
