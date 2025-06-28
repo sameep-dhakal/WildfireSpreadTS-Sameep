@@ -48,7 +48,7 @@ parameters:
   data.return_doy:
     value: true  
   trainer.max_steps: 
-    value: 10
+    value: 10000
   do_test:
     value: True  
 program: src/train.py
