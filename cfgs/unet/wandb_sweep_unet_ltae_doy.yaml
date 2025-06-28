@@ -42,7 +42,7 @@ parameters:
   data.remove_duplicate_features:
     value: False     #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
-    value: True
+    value: False
   data.return_doy:
     value: true  
   trainer.max_steps: 
@@ -50,3 +50,4 @@ parameters:
   do_test:
     value: True  
 program: src/train.py
+
