@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unet-wstsplus
+project:  wildfire-prediction-unet-doy
 command:
   - ${env}
   - python
@@ -17,6 +17,8 @@ metric:
 parameters:
   model.class_path:
     value: models.SMPTempModel
+  model.use_doy:
+    value: true  
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:

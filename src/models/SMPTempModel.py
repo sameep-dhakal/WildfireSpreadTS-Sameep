@@ -18,6 +18,7 @@ class SMPTempModel(BaseModel):
         flatten_temporal_dimension: bool,
         pos_class_weight: float,
         encoder_weights = None,
+        use_doy: bool = False,
         *args: Any,
         **kwargs: Any
     ):
