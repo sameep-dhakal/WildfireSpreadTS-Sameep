@@ -297,7 +297,6 @@
 #             return self.loss(y_hat, y.float())
 
 
-
 import math
 from abc import ABC
 from typing import Any, Literal, Optional, Tuple
