@@ -26,7 +26,7 @@ class SMPTempModel(BaseModel):
             n_channels=n_channels,
             flatten_temporal_dimension=flatten_temporal_dimension,
             pos_class_weight=pos_class_weight,
-            use_doy=False, 
+            use_doy=use_doy, 
             *args,
             **kwargs
         )
