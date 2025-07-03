@@ -1,6 +1,7 @@
 # WildfireSpreadTS: A dataset of multi-modal time series for wildfire spread prediction
 
-This repository contains the code for recreating the experiments in the WildfireSpreadTS paper. 
+This repository is the copy of https://github.com/SebastianGer/WildfireSpreadTS
+This repository contains the code for recreating the experiments in the WildfireSpreadTS paper.  
 
 - [Link to main paper](https://openreview.net/pdf?id=RgdGkPRQ03)
 - [Link to supplementary material](https://openreview.net/attachment?id=RgdGkPRQ03&name=supplementary_material)
