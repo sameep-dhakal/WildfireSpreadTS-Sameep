@@ -4,6 +4,7 @@ import torch
 import segmentation_models_pytorch as smp
 from models.utae_paps_models.ltae import LTAE2d
 from models.utae_paps_models.utae import Temporal_Aggregator
+import os
 
 from models.BaseModel import BaseModel
 
@@ -32,6 +33,13 @@ class SMPTempModel(BaseModel):
         )
         self.save_hyperparameters()
         encoder_weights = encoder_weights if encoder_weights != "none" else None
+
+        if encoder_weights == "pastis": 
+            primary_ckpt = '/develop/data/utae_pre/model.pth.tar'
+            secondary_ckpt = '/home/sl221120/WildfireSpreadTS/src/models/utae_paps_models/model.pth.tar'
+            pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
+            self.load_checkpoint(pretrained_checkpoint)
+
         self.model = smp.Unet(
             encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
             encoder_weights=encoder_weights,  # use `imagenet` pre-trained weights for encoder initialization

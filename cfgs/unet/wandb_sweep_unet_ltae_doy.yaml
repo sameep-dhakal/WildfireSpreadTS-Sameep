@@ -18,7 +18,7 @@ parameters:
   model.class_path:
     value: models.SMPTempModel
   model.use_doy:
-    value: true  
+    value: False 
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
@@ -46,7 +46,7 @@ parameters:
   data.additional_data:
     value: False
   data.return_doy:
-    value: true  
+    value: False  
   trainer.max_steps: 
     value: 10000
   do_test:
