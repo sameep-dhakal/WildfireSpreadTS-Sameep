@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unet-doy
+project:  wildfire-prediction-unet-doytrue
 command:
   - ${env}
   - python
