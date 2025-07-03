@@ -92,6 +92,16 @@ class SMPTempModel(BaseModel):
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
         B, T, C, H, W = x.shape
         doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
+
+            # ✅ Properly use DOY passed from dataset if available and if self.use_doy is True
+        if not self.use_doy or doys is None:
+            doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
+        else:
+            assert doys.shape == (B, T), f"Expected doys shape {(B,T)}, got {doys.shape}"
+
+        # ✅ Optional debug print to see what is actually going to LTAE
+        print(f"🚀 DOYs being passed to LTAE: {doys[0]}")
+
         num_stages = len(self.model.encoder.out_channels)
         encoder_features = [[] for _ in range(num_stages)]
         # Extract encoder features for each time step

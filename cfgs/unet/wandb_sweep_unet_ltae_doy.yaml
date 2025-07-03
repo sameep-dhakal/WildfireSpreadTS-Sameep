@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unet-doytrue
+project:  wildfire-prediction-unet-doyworking
 command:
   - ${env}
   - python
@@ -18,7 +18,7 @@ parameters:
   model.class_path:
     value: models.SMPTempModel
   model.use_doy:
-    value: False 
+    value: true  
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
@@ -42,14 +42,14 @@ parameters:
   data.n_leading_observations:
     value: 5
   data.remove_duplicate_features:
-    value: False     #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
+    value: false     #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
-    value: False
+    value: false
   data.return_doy:
-    value: False  
+    value: true  
   trainer.max_steps: 
     value: 10000
   do_test:
-    value: True  
+    value: true
 program: src/train.py
 
