@@ -62,7 +62,33 @@ class SMPTempModel(BaseModel):
         
         print(f"Loaded {encoder_name} with {encoder_weights} weights + LTAE")
 
-        
+
+    def load_checkpoint(self, checkpoint_path: str) -> None:
+        """Load a pretrained checkpoint for the model.
+
+        Args:
+            checkpoint_path (str): Path to the checkpoint file.
+        """
+        checkpoint = torch.load(checkpoint_path)
+        state_dict = checkpoint["state_dict"]
+        prefix = "encoder."
+        new_state_dict = {}
+        for key, value in state_dict.items():
+            if key.startswith(prefix):
+                new_state_dict[key[len(prefix):]] = value
+            else:
+                new_state_dict[key] = value
+        model_state_dict = self.model.state_dict()
+        filtered_state_dict = {
+            k: v
+            for k, v in new_state_dict.items()
+            if k in model_state_dict and model_state_dict[k].size() == v.size()
+        }
+        # Load the weights into the model
+        self.model.load_state_dict(filtered_state_dict, strict=False)
+        print(f"Checkpoint loaded successfully from '{checkpoint_path}'")
+
+
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
         B, T, C, H, W = x.shape
         doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
