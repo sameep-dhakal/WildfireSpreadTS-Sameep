@@ -91,13 +91,15 @@ class SMPTempModel(BaseModel):
 
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
         B, T, C, H, W = x.shape
-        doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
-
             # ✅ Properly use DOY passed from dataset if available and if self.use_doy is True
         if not self.use_doy or doys is None:
             doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
+            print(f"🚀 Using dummy positional encoding: {doys[0]}")
+
         else:
             assert doys.shape == (B, T), f"Expected doys shape {(B,T)}, got {doys.shape}"
+            print(f"🚀 Using real DOY from dataset: {doys[0]}")
+
 
         # ✅ Optional debug print to see what is actually going to LTAE
         print(f"🚀 DOYs being passed to LTAE: {doys[0]}")
