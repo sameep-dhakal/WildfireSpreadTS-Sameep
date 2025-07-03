@@ -92,7 +92,7 @@ class SMPTempModel(BaseModel):
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
         B, T, C, H, W = x.shape
             # ✅ Properly use DOY passed from dataset if available and if self.use_doy is True
-        if not self.use_doy or doys is None:
+        if not self.hparams.use_doy or doys is None:
             doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
             print(f"🚀 Using dummy positional encoding: {doys[0]}")
 
