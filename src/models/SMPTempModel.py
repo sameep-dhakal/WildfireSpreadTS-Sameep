@@ -108,7 +108,7 @@ class SMPTempModel(BaseModel):
             # now modify doys to be: relative positions + start doy anchor
             start_doy = doys[:, 0].unsqueeze(1)  # shape (B, 1)
             relative_positions = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)  # (B, T)
-            doys = start_doy/365.0 + relative_positions
+            doys = start_doy + relative_positions
             # print(f" Using anchored positional encoding: start doy = {start_doy[0].item()}, positions = {doys[0]}")
 
 
