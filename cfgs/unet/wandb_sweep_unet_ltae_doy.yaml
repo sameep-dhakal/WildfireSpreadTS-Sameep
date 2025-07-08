@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unet-doyworking
+project:  wp-unet-add_constant_doy
 command:
   - ${env}
   - python
