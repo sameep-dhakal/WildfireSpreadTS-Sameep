@@ -91,18 +91,29 @@ class SMPTempModel(BaseModel):
 
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
         B, T, C, H, W = x.shape
-            # ✅ Properly use DOY passed from dataset if available and if self.use_doy is True
+
+        # previous code how the doys were being calculated 
+        # doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
+        # print(f" Input shape: {x.shape}, DOYs shape: {doys.shape if doys is not None else 'None'}")
+
+        # code added dy sameep to ajust doy to the data + previous doy + current positions
         if not self.hparams.use_doy or doys is None:
+            # same as before
             doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
-            print(f"🚀 Using dummy positional encoding: {doys[0]}")
+            # print(f" Using dummy positional encoding: {doys[0]}")
 
         else:
+            # instead of asserting strict shape, allow your logic
             assert doys.shape == (B, T), f"Expected doys shape {(B,T)}, got {doys.shape}"
-            print(f"🚀 Using real DOY from dataset: {doys[0]}")
+            # now modify doys to be: relative positions + start doy anchor
+            start_doy = doys[:, 0].unsqueeze(1)  # shape (B, 1)
+            relative_positions = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)  # (B, T)
+            doys = start_doy + relative_positions
+            # print(f" Using anchored positional encoding: start doy = {start_doy[0].item()}, positions = {doys[0]}")
 
 
-        # ✅ Optional debug print to see what is actually going to LTAE
-        print(f"🚀 DOYs being passed to LTAE: {doys[0]}")
+        # # ✅ Optional debug print to see what is actually going to LTAE
+        # print(f" DOYs being passed to LTAE: {doys[0]}")
 
         num_stages = len(self.model.encoder.out_channels)
         encoder_features = [[] for _ in range(num_stages)]
