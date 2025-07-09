@@ -40,12 +40,23 @@ class SMPTempModel(BaseModel):
             pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
             self.load_checkpoint(pretrained_checkpoint)
 
+        # self.model = smp.Unet(
+        #     encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
+        #     encoder_weights=encoder_weights,  # use `imagenet` pre-trained weights for encoder initialization
+        #     in_channels=n_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+        #     classes=1,  # model output channels (number of classes in your dataset)
+        # )
+        in_channels_total = n_channels
+        if use_doy:
+            in_channels_total += 2  # adding sin/cos DOY explicitly
+
         self.model = smp.Unet(
-            encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
-            encoder_weights=encoder_weights,  # use `imagenet` pre-trained weights for encoder initialization
-            in_channels=n_channels,  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-            classes=1,  # model output channels (number of classes in your dataset)
-        )
+            encoder_name=encoder_name,
+            encoder_weights=encoder_weights,
+            in_channels=in_channels_total,
+            classes=1,
+)
+
         self.last_stage_channels = self.model.encoder.out_channels[-1]
         self.ltae = LTAE2d(
             in_channels=self.last_stage_channels,
