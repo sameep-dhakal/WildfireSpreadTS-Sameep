@@ -54,7 +54,7 @@ class SMPTempModel(BaseModel):
             mlp=[256, self.last_stage_channels],
             dropout=0.2,
             d_model=256,
-            T=365, # Assuming a yearly cycle for DOY
+            T=1000,
             return_att=True,
             positional_encoding=True,
         )
@@ -97,23 +97,25 @@ class SMPTempModel(BaseModel):
         # print(f" Input shape: {x.shape}, DOYs shape: {doys.shape if doys is not None else 'None'}")
 
         # code added dy sameep to ajust doy to the data + previous doy + current positions
+    # --- Adjust DOYs: use either dummy or anchored modulo 365
         if not self.hparams.use_doy or doys is None:
-            # same as before
-            doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
-            # print(f" Using dummy positional encoding: {doys[0]}")
-
+            relative_positions = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
         else:
-            # instead of asserting strict shape, allow your logic
             assert doys.shape == (B, T), f"Expected doys shape {(B,T)}, got {doys.shape}"
-            # now modify doys to be: relative positions + start doy anchor
-            start_doy = doys[:, 0].unsqueeze(1)  # shape (B, 1)
-            relative_positions = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)  # (B, T)
-            doys = (start_doy + relative_positions) % 365  # wrap around at 365 days
-            # print(f" Using anchored positional encoding: start doy = {start_doy[0].item()}, positions = {doys[0]}")
+            start_doy = doys[:, 0].unsqueeze(1)
+            relative_positions = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
+            doys = (start_doy + relative_positions) % 365  # wrap around year
 
+        # --- Compute sin/cos absolute DOY and add as extra input channels
+        sin_doy = torch.sin(2 * torch.pi * doys / 365).unsqueeze(-1).unsqueeze(-1)  # (B, T, 1, 1)
+        cos_doy = torch.cos(2 * torch.pi * doys / 365).unsqueeze(-1).unsqueeze(-1)
+        sin_doy = sin_doy.repeat(1, 1, H, W)  # (B, T, H, W)
+        cos_doy = cos_doy.repeat(1, 1, H, W)
+        sin_doy = sin_doy.unsqueeze(2)  # (B, T, 1, H, W)
+        cos_doy = cos_doy.unsqueeze(2)
 
-        # # ✅ Optional debug print to see what is actually going to LTAE
-        # print(f" DOYs being passed to LTAE: {doys[0]}")
+        # Concatenate to input channels
+        x = torch.cat([x, sin_doy, cos_doy], dim=2)  # (B, T, C+2, H, W)
 
         num_stages = len(self.model.encoder.out_channels)
         encoder_features = [[] for _ in range(num_stages)]
@@ -125,7 +127,7 @@ class SMPTempModel(BaseModel):
                 encoder_features[i].append(features[i])
         # Process the last stage with LTAE
         last_stage = torch.stack(encoder_features[-1], dim=1)  # (B, T, C, H, W)
-        aggregated_last, attn = self.ltae(last_stage, batch_positions=doys)
+        aggregated_last, attn = self.ltae(last_stage, batch_positions=relative_positions)
         # Process other stages with Temporal Aggregator
         aggregated_skips = []
         n_heads = 16
