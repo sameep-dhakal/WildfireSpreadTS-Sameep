@@ -1,4 +1,4 @@
-project:  wp-unet-add_const_doy
+project:  wp-unet-changed-t
 command:
   - ${env}
   - python
@@ -18,7 +18,7 @@ parameters:
   model.class_path:
     value: models.SMPTempModel
   model.use_doy:
-    value: true  
+    value: false 
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
@@ -46,7 +46,7 @@ parameters:
   data.additional_data:
     value: false
   data.return_doy:
-    value: true  
+    value: false 
   trainer.max_steps: 
     value: 10000
   do_test:

@@ -54,7 +54,7 @@ class SMPTempModel(BaseModel):
             mlp=[256, self.last_stage_channels],
             dropout=0.2,
             d_model=256,
-            T=1000,
+            T=365, # Assuming a yearly cycle for DOY
             return_att=True,
             positional_encoding=True,
         )
