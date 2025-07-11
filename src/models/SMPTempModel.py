@@ -138,7 +138,7 @@ class SMPTempModel(BaseModel):
                 encoder_features[i].append(features[i])
         # Process the last stage with LTAE
         last_stage = torch.stack(encoder_features[-1], dim=1)  # (B, T, C, H, W)
-        aggregated_last, attn = self.ltae(last_stage, batch_positions=relative_positions)
+        aggregated_last, attn = self.ltae(last_stage, batch_positions=doys)
         # Process other stages with Temporal Aggregator
         aggregated_skips = []
         n_heads = 16
