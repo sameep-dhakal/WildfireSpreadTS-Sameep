@@ -1,4 +1,4 @@
-project:  wp-unet-relativepositions+doy+morechannels
+project:  wp-unet-relativepositions+doy+single_channel
 command:
   - ${env}
   - python
