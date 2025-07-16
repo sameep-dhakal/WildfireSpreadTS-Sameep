@@ -32,7 +32,9 @@ class SMPTempModel(BaseModel):
             **kwargs
         )
         self.save_hyperparameters()
-        encoder_weights = encoder_weights if encoder_weights != "none" else None
+        # encoder_weights = encoder_weights if encoder_weights != "none" else None
+        encoder_weights_for_smp = encoder_weights if encoder_weights in ["imagenet", "ssl", "swsl"] else None
+
 
         # self.model = smp.Unet(
         #     encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
@@ -46,7 +48,7 @@ class SMPTempModel(BaseModel):
 
         self.model = smp.Unet(
             encoder_name=encoder_name,
-            encoder_weights=encoder_weights,
+            encoder_weights=encoder_weights_for_smp,
             in_channels=in_channels_total,
             classes=1,
 )
