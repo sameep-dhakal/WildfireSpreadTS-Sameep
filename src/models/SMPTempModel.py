@@ -130,10 +130,10 @@ class SMPTempModel(BaseModel):
         # # Concatenate to input channels
         # x = torch.cat([x, sin_doy, cos_doy], dim=2)  # (B, T, C+2, H, W)
 
-        doy_channel = doys.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1, H, W)
+        # doy_channel = doys.unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).repeat(1, 1, 1, H, W)
 
         # Concatenate to input
-        x = torch.cat([x, doy_channel], dim=2)  
+        # x = torch.cat([x, doy_channel], dim=2)  
 
         num_stages = len(self.model.encoder.out_channels)
         encoder_features = [[] for _ in range(num_stages)]
