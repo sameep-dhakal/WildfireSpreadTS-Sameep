@@ -34,12 +34,6 @@ class SMPTempModel(BaseModel):
         self.save_hyperparameters()
         encoder_weights = encoder_weights if encoder_weights != "none" else None
 
-        if encoder_weights == "pastis": 
-            primary_ckpt = '/develop/data/utae_pre/model.pth.tar'
-            secondary_ckpt = '/src/models/utae_paps_models/model.pth.tar'
-            pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
-            self.load_checkpoint(pretrained_checkpoint)
-
         # self.model = smp.Unet(
         #     encoder_name=encoder_name,  # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
         #     encoder_weights=encoder_weights,  # use `imagenet` pre-trained weights for encoder initialization
@@ -56,6 +50,12 @@ class SMPTempModel(BaseModel):
             in_channels=in_channels_total,
             classes=1,
 )
+        
+        if encoder_weights == "pastis": 
+            primary_ckpt = '/develop/data/utae_pre/model.pth.tar'
+            secondary_ckpt = '/src/models/utae_paps_models/model.pth.tar'
+            pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
+            self.load_checkpoint(pretrained_checkpoint)
 
         self.last_stage_channels = self.model.encoder.out_channels[-1]
         self.ltae = LTAE2d(
