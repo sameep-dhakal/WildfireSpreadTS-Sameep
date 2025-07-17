@@ -59,6 +59,13 @@ class SMPTempModel(BaseModel):
             pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
             self.load_checkpoint(pretrained_checkpoint)
 
+        elif encoder_weights == "bigearthnet":    
+            primary_ckpt = '/develop/data/utae_pre_bigearth/model.pth.tar'
+            secondary_ckpt = '/develop/code/WildfireSpreadTS-Sameep/src/models/utae_paps_models/Gallelio-weights/resnet18_bigearthnet_encoder.pth'
+            pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
+            self.load_checkpoint(pretrained_checkpoint)
+
+
         self.last_stage_channels = self.model.encoder.out_channels[-1]
         self.ltae = LTAE2d(
             in_channels=self.last_stage_channels,
