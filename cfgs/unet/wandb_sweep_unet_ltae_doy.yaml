@@ -1,4 +1,4 @@
-project:  wp-unet-bigearth
+project:  wp-unet-simclr
 command:
   - ${env}
   - python
