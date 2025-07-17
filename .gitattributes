@@ -1,0 +1,2 @@
+/Users/sameeps/Documents/Dr-Malof/WIldfire/WildfireSpreadTS/src/models/utae_paps_models/Gallelio-weights/encoder.pt filter=lfs diff=lfs merge=lfs -text
+src/models/utae_paps_models/Gallelio-weights/encoder.pt filter=lfs diff=lfs merge=lfs -text
