@@ -65,9 +65,15 @@ class SMPTempModel(BaseModel):
             pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
             self.load_checkpoint(pretrained_checkpoint)
 
+        elif encoder_weights == "gallelio":    
+            primary_ckpt = '/develop/data/utae_pre_gallelio/model.pth.tar'
+            secondary_ckpt = '/develop/code/WildfireSpreadTS-Sameep/src/models/utae_paps_models/Gallelio-weights/encoder.pt'
+            pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
+            self.load_checkpoint(pretrained_checkpoint)    
+
 
         self.last_stage_channels = self.model.encoder.out_channels[-1]
-        self.ltae = LTAE2d(
+        self.ltae = LTAE2d( 
             in_channels=self.last_stage_channels,
             n_head=16,
             d_k=4,
@@ -90,7 +96,13 @@ class SMPTempModel(BaseModel):
             checkpoint_path (str): Path to the checkpoint file.
         """
         checkpoint = torch.load(checkpoint_path)
-        state_dict = checkpoint["state_dict"]
+        # state_dict = checkpoint["state_dict"]
+        # checking if checkpoint contains state_dict or is a raw state_dict
+        if "state_dict" in checkpoint:
+            state_dict = checkpoint["state_dict"]
+        else:
+            state_dict = checkpoint  # raw state_dict
+
         prefix = "encoder."
         new_state_dict = {}
         for key, value in state_dict.items():
