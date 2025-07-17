@@ -1,4 +1,4 @@
-project:  wp-unet-pastis
+project:  wp-unet-bigearth
 command:
   - ${env}
   - python
