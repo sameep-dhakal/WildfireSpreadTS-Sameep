@@ -78,6 +78,13 @@ class SMPTempModel(BaseModel):
             self.load_checkpoint(pretrained_checkpoint)       
 
 
+        elif encoder_weights == "seco":    # Updated for SECO
+            primary_ckpt = '/develop/data/utae_pre_seco/model.pth.tar'
+            secondary_ckpt = '/develop/code/WildfireSpreadTS-Sameep/src/models/utae_paps_models/Gallelio-weights/seco_resnet18_1m.pth'
+            pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
+            self.load_checkpoint(pretrained_checkpoint)        
+
+
         self.last_stage_channels = self.model.encoder.out_channels[-1]
         self.ltae = LTAE2d( 
             in_channels=self.last_stage_channels,
@@ -109,7 +116,7 @@ class SMPTempModel(BaseModel):
         else:
             state_dict = checkpoint  # raw state_dict
 
-        prefix = "encoder."
+        prefix = "encoder_q."
         new_state_dict = {}
         for key, value in state_dict.items():
             if key.startswith(prefix):
