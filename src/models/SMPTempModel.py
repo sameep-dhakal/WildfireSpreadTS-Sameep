@@ -54,8 +54,8 @@ class SMPTempModel(BaseModel):
 )
         
         if encoder_weights == "pastis": 
-            primary_ckpt = '/develop/data/utae_pre/model.pth.tar'
-            secondary_ckpt = '/src/models/utae_paps_models/model.pth.tar'
+            primary_ckpt = '/develop/data/utae_pre/modelpast.pth.tar'
+            secondary_ckpt = '/develop/code/WildfireSpreadTS-Sameep/src/models/utae_paps_models/Gallelio-weights/UTAE_PAPs/Fold_4/model.pth.tar'
             pretrained_checkpoint = primary_ckpt if os.path.exists(primary_ckpt) else secondary_ckpt
             self.load_checkpoint(pretrained_checkpoint)
 
@@ -116,7 +116,7 @@ class SMPTempModel(BaseModel):
         else:
             state_dict = checkpoint  # raw state_dict
 
-        prefix = "encoder_q."
+        prefix = "encoder."
         new_state_dict = {}
         for key, value in state_dict.items():
             if key.startswith(prefix):

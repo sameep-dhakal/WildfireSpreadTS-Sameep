@@ -1,4 +1,4 @@
-project:  wp-unet-seco
+project:  wp-unet-pastis_fold4
 command:
   - ${env}
   - python
