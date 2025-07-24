@@ -44,7 +44,7 @@ class SMPTempModel(BaseModel):
         # )
         in_channels_total = n_channels
         if use_doy:
-            in_channels_total += 1 # adding sin/cos DOY explicitly
+            in_channels_total = n_channels # adding sin/cos DOY explicitly
 
         self.model = smp.Unet(
             encoder_name=encoder_name,
