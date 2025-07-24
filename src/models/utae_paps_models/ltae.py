@@ -82,7 +82,7 @@ class LTAE2d(nn.Module):
         self.mlp = nn.Sequential(*layers)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, batch_positions=None, pad_mask=None, return_comp=False):
+    def forward(self, x, batch_positions=None, doys=None, pad_mask=None, return_comp=False):
         sz_b, seq_len, d, h, w = x.shape
         if pad_mask is not None:
             pad_mask = (
@@ -107,9 +107,18 @@ class LTAE2d(nn.Module):
                 .repeat((1, 1, h))
                 .unsqueeze(-1)
                 .repeat((1, 1, 1, w))
-            )  # BxTxHxW
+            )  # BxTxHx
             bp = bp.permute(0, 2, 3, 1).contiguous().view(sz_b * h * w, seq_len)
-            out = out + self.positional_encoder(bp)
+
+            # Adding the original doy position 
+            dp = doys.unsqueeze(-1).repeat(1, 1, h).unsqueeze(-1).repeat(1, 1, 1, w)
+            dp = dp.permute(0, 2, 3, 1).reshape(sz_b * h * w, seq_len)
+
+
+            # changing the positional encoding to use both relative positions and doys
+            out = out + self.positional_encoder(bp, dp)
+
+
 
         out, attn = self.attention_heads(out, pad_mask=pad_mask)
 

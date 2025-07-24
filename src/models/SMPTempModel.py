@@ -137,6 +137,8 @@ class SMPTempModel(BaseModel):
     def forward(self, x: torch.Tensor, doys: torch.Tensor) -> torch.Tensor:
         B, T, C, H, W = x.shape
 
+        # doys = None
+
         # previous code how the doys were being calculated 
         # doys = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
         # print(f" Input shape: {x.shape}, DOYs shape: {doys.shape if doys is not None else 'None'}")
@@ -149,7 +151,7 @@ class SMPTempModel(BaseModel):
             assert doys.shape == (B, T), f"Expected doys shape {(B,T)}, got {doys.shape}"
             start_doy = doys[:, 0].unsqueeze(1)
             relative_positions = torch.arange(T, device=x.device).unsqueeze(0).repeat(B, 1)
-            doys = ((start_doy + relative_positions) % 365 ) / 365.0 # wrap around year
+            doys = start_doy.repeat(1, T)
 
         # # --- Compute sin/cos absolute DOY and add as extra input channels
         # sin_doy = torch.sin(2 * torch.pi * doys / 365).unsqueeze(-1).unsqueeze(-1)  # (B, T, 1, 1)
@@ -177,7 +179,7 @@ class SMPTempModel(BaseModel):
                 encoder_features[i].append(features[i])
         # Process the last stage with LTAE
         last_stage = torch.stack(encoder_features[-1], dim=1)  # (B, T, C, H, W)
-        aggregated_last, attn = self.ltae(last_stage, batch_positions=relative_positions)
+        aggregated_last, attn = self.ltae(last_stage, batch_positions=relative_positions, doys=doys)
         # Process other stages with Temporal Aggregator
         aggregated_skips = []
         n_heads = 16
