@@ -1,4 +1,4 @@
-project:  wp-unet-doy-relative-T-365
+project:  wp-unet-doy-relative-T-1000
 command:
   - ${env}
   - python
