@@ -52,7 +52,7 @@ class LTAE2d(nn.Module):
 
         if positional_encoding:
             self.positional_encoder = PositionalEncoder(
-                self.d_model // n_head, T=T, repeat=n_head
+                self.d_model // (2 * self.n_head), T=T, repeat=n_head
             )
         else:
             self.positional_encoder = None
