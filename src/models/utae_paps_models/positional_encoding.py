@@ -81,8 +81,9 @@ class PositionalEncoder(nn.Module):
         if doys is None:
             final = rel_enc
         else:
-            doy_enc = self._sinusoidal_encoding(doys, self.denom_doy)         # (B, T, d)
-            final = torch.cat([rel_enc, doy_enc], dim=-1)                     # (B, T, 2d)
+            doy_enc = self._sinusoidal_encoding(doys, self.denom_doy)   
+            final = doy_enc + rel_enc      # (B, T, d)
+            # final = torch.cat([rel_enc, doy_enc], dim=-1)  # (B, T, 2d)
 
         if self.repeat is not None:
             final = torch.cat([final for _ in range(self.repeat)], dim=-1)
