@@ -111,12 +111,12 @@ class LTAE2d(nn.Module):
             bp = bp.permute(0, 2, 3, 1).contiguous().view(sz_b * h * w, seq_len)
 
             # Adding the original doy position 
-            dp = doys.unsqueeze(-1).repeat(1, 1, h).unsqueeze(-1).repeat(1, 1, 1, w)
-            dp = dp.permute(0, 2, 3, 1).reshape(sz_b * h * w, seq_len)
+            # dp = doys.unsqueeze(-1).repeat(1, 1, h).unsqueeze(-1).repeat(1, 1, 1, w)
+            # dp = dp.permute(0, 2, 3, 1).reshape(sz_b * h * w, seq_len)
 
 
             # changing the positional encoding to use both relative positions and doys
-            out = out + self.positional_encoder(bp, dp)
+            out = out + self.positional_encoder(bp)
 
 
 
