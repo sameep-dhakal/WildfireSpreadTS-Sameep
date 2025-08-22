@@ -42,7 +42,7 @@ class PositionalEncoder(nn.Module):
         super(PositionalEncoder, self).__init__()
         self.d = d
         self.T_rel = T              # For relative position
-        self.T_doy = 365            # For DOY, hardcoded
+        self.T_doy = 1000            # For DOY, hardcoded
         self.repeat = repeat
         self.offset = offset
         self.updated_location = False

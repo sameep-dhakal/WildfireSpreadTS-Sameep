@@ -1,4 +1,4 @@
-project:  wp-unet-doyplusrelative-T365
+project:  wildfire-prediction-unetltae-3days
 command:
   - ${env}
   - python
@@ -18,7 +18,7 @@ parameters:
   model.class_path:
     value: models.SMPTempModel
   model.use_doy:
-    value: true
+    value: false
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
@@ -40,13 +40,13 @@ parameters:
       # - [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 38, 39]
       # - None 
   data.n_leading_observations:
-    value: 5
+    value: 3
   data.remove_duplicate_features:
     value: false     #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
     value: false
   data.return_doy:
-    value: true
+    value: false
   trainer.max_steps: 
     value: 10000
   do_test:
