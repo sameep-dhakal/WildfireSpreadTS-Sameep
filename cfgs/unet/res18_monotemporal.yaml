@@ -30,7 +30,7 @@ model:
   init_args:
     encoder_name: resnet18
     encoder_weights: imagenet # Use pretrained weights from Imagenet
-    n_channels: 40
+    n_channels: 8
     flatten_temporal_dimension: true
     pos_class_weight: 236 # (relative frequency in augmented 2018 and 2020 fires)^-1
     loss_function: Focal
