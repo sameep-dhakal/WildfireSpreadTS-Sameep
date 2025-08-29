@@ -498,7 +498,7 @@ class FireSpreadDataset(Dataset):
             _type_: _description_ Tuple of lists of integers, first list contains static feature indices, second list contains dynamic feature indices.
         """
         static_feature_ids = [12,13,14] + list(range(16,33))
-        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,40))
+        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,41))
         return static_feature_ids, dynamic_feature_ids
 
     @staticmethod
@@ -627,5 +627,20 @@ class FireSpreadDataset(Dataset):
                 x[:, -1, ...] = np.nan_to_num(x[:, -1, ...], nan=0)
 
                 # Turn active fire detection time from hhmm to hh.
-                x[:, -1, ...] = np.floor_divide(x[:, -1, ...], 100)
+                # previous code to convert active fire to hour now its already in hours
+
+                # x[:, -1, ...] = np.floor_divide(x[:, -1, ...], 100)
+
+                # Active fire band (last channel)
+                af = x[:, -1, ...]
+
+                # Replace NaNs with 0 (ok to keep)
+                af = np.nan_to_num(af, nan=0.0)
+
+                # Only convert hhmm -> hh if values look like hhmm (i.e., > 100 somewhere)
+                if np.nanmax(af) > 100:
+                    af = np.floor_divide(af, 100)  # e.g., 1330 -> 13
+                # else: already in hours (0–24), do nothing
+
+                x[:, -1, ...] = af
                 yield year, fire_name, img_dates, lnglat, x
