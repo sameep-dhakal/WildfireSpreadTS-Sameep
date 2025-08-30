@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unetltae-rawfire-5days_val_avg_precision
+project:  wildfire-prediction-unetltae-rawfire-5days-valavgprecision
 command:
   - ${env}
   - python
