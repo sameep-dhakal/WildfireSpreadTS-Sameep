@@ -498,7 +498,7 @@ class FireSpreadDataset(Dataset):
             _type_: _description_ Tuple of lists of integers, first list contains static feature indices, second list contains dynamic feature indices.
         """
         static_feature_ids = [12,13,14] + list(range(16,33))
-        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,40))
+        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,41))
         return static_feature_ids, dynamic_feature_ids
 
     @staticmethod
