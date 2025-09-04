@@ -145,9 +145,23 @@ class FireSpreadDataset(Dataset):
                         end_index-1)]
                     doys = self.img_dates_to_doys(doys)
                     doys = torch.Tensor(doys)
-            x, y = np.split(imgs, [-1], axis=0)
-            # Last image's active fire mask is used as label, rest is input data
-            y = y[0, -1, ...]
+
+
+            # sameep changed it to process the rawfire
+            # x, y = np.split(imgs, [-1], axis=0)
+            # # Last image's active fire mask is used as label, rest is input data
+            # y = y[0, -1, ...]
+
+            # AFTER
+            x_np, y_np = np.split(imgs, [-1], axis=0)     # x_np: (T, C, H, W), y_np: (1, C, H, W)
+            raw_C = y_np.shape[1]
+            target_idx = 22                                # rawfire (0-based) in your HDF5
+            if target_idx >= raw_C:
+                raise IndexError(f"rawfire target_idx {target_idx} >= raw_C {raw_C}")
+            y = y_np[0, target_idx, ...]                   # (H, W)  next-day rawfire
+            x = x_np
+
+
         else:
             imgs_to_load = self.imgs_per_fire[found_fire_year][found_fire_name][in_fire_index:end_index]
             imgs = []
@@ -324,7 +338,9 @@ class FireSpreadDataset(Dataset):
             # Turn active fire detection time from hhmm to hh.
             x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
 
-        y = (y > 0).long()
+
+        # sameep removed the y binarization
+        # y = (y > 0).long()
 
         # Augmentation has to come before normalization, because we have to correct the angle features when we change
         # the orientation of the image.
@@ -342,13 +358,14 @@ class FireSpreadDataset(Dataset):
         x[:, self.indices_of_degree_features, ...] = torch.sin(
             torch.deg2rad(x[:, self.indices_of_degree_features, ...]))
 
+        # sameep changed and removed the binary mask
         # Compute binary mask of active fire pixels before normalization changes what 0 means. 
-        binary_af_mask = (x[:, -1:, ...] > 0).float()
+        # binary_af_mask = (x[:, -1:, ...] > 0).float()
 
         x = self.standardize_features(x)
 
         # Adds the binary fire mask as an additional channel to the input data.
-        x = torch.cat([x, binary_af_mask], axis=1)
+        # x = torch.cat([x, binary_af_mask], axis=1)
 
         # Replace NaN values with 0, thereby essentially setting them to the mean of the respective feature.
         x = torch.nan_to_num(x, nan=0.0)
@@ -498,7 +515,7 @@ class FireSpreadDataset(Dataset):
             _type_: _description_ Tuple of lists of integers, first list contains static feature indices, second list contains dynamic feature indices.
         """
         static_feature_ids = [12,13,14] + list(range(16,33))
-        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,41))
+        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,40))
         return static_feature_ids, dynamic_feature_ids
 
     @staticmethod
