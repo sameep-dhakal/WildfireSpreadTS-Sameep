@@ -326,6 +326,22 @@ class FireSpreadDataset(Dataset):
 
         x, y = torch.Tensor(x), torch.Tensor(y)
 
+
+        # sameep added code below to replace nans in rawfire
+
+                # --- Fix for rawfire NaNs ---
+        # Replace NaNs with 0.0 (so they don’t break mean())
+        x = torch.nan_to_num(x, nan=0.0, posinf=None, neginf=None)
+        y = torch.nan_to_num(y, nan=0.0, posinf=None, neginf=None)
+
+        # Ensure target has shape [1, H, W]
+        if y.dim() == 2:        # i.e., shape [H, W] without channel dimension
+            y = y.unsqueeze(0)  # make it [1, H, W]
+        y = y.to(torch.float32) # make sure it's float
+
+
+        ##################################################
+
         # Preprocessing that has been done in HDF files already
         if not self.load_from_hdf5:
 
@@ -413,11 +429,24 @@ class FireSpreadDataset(Dataset):
             # We really care about having fire pixels in the target. But if we don't find any there,
             # we care about fire pixels in the input, to learn to predict that no new observations will be made,
             # even though previous days had active fires.
-            n_fire_pixels = x_crop[:, -1, ...].mean() + \
-                1000 * y_crop.float().mean()
-            if n_fire_pixels > best_n_fire_pixels:
-                best_n_fire_pixels = n_fire_pixels
-                best_crop = (x_crop, y_crop)
+
+            # SAMEEP CHANGED THE CODE BELOW TO ADD THE N FIRE Pixels
+            # n_fire_pixels = x_crop[:, -1, ...].mean() + \
+            #     1000 * y_crop.float().mean()
+            
+            x_fire_mean = torch.nanmean(x_crop[:, -1, ...])
+            y_fire_mean = torch.nanmean(y_crop.to(torch.float32))
+            n_fire_pixels = x_fire_mean + 1000.0 * y_fire_mean
+
+            # if n_fire_pixels > best_n_fire_pixels:
+            #     best_n_fire_pixels = n_fire_pixels
+            #     best_crop = (x_crop, y_crop)
+
+            # Skip NaN scores
+            if torch.isfinite(n_fire_pixels):
+                if n_fire_pixels > best_n_fire_pixels:
+                    best_crop = (x_crop, y_crop)
+                    best_n_fire_pixels = n_fire_pixels
 
         x, y = best_crop
 
