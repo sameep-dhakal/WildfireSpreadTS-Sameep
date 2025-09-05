@@ -312,6 +312,8 @@ from segmentation_models_pytorch.losses import (DiceLoss, JaccardLoss,
                                                 LovaszLoss)
 from torchvision.ops import sigmoid_focal_loss
 import matplotlib.pyplot as plt
+import torch.nn.functional as F
+
 
 class BaseModel(pl.LightningModule, ABC):
     """_summary_ Base model class for all models in this project. Implements the training, validation and test steps, 
