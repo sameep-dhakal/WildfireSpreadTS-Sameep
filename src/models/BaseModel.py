@@ -666,32 +666,32 @@ class BaseModel(pl.LightningModule, ABC):
 
 
 
-def compute_loss(self, y_hat, y):
-    # --- 1) Align shapes: [B,H,W] -> [B,1,H,W] ---
-    if y_hat.dim() == 3:
-        y_hat = y_hat.unsqueeze(1)
-    if y.dim() == 3:
-        y = y.unsqueeze(1)
-    y = y.float()
+    def compute_loss(self, y_hat, y):
+        # --- 1) Align shapes: [B,H,W] -> [B,1,H,W] ---
+        if y_hat.dim() == 3:
+            y_hat = y_hat.unsqueeze(1)
+        if y.dim() == 3:
+            y = y.unsqueeze(1)
+        y = y.float()
 
-    # --- 2) Auto-detect continuous targets (rawfire) ---
-    # If any value > 1 OR values are non {0,1} (fractional), treat as regression.
-    with torch.no_grad():
-        is_continuous = (y.max() > 1.0) or ((y - y.round()).abs().max() > 1e-6)
+        # --- 2) Auto-detect continuous targets (rawfire) ---
+        # If any value > 1 OR values are non {0,1} (fractional), treat as regression.
+        with torch.no_grad():
+            is_continuous = (y.max() > 1.0) or ((y - y.round()).abs().max() > 1e-6)
 
-    # --- 3) Use a regression loss for continuous, otherwise keep your current loss (e.g., Focal) ---
-    if is_continuous:
-        # SmoothL1 (Huber) is robust and stable; swap to F.mse_loss if you prefer.
-        return F.smooth_l1_loss(y_hat, y, beta=0.5)
-    else:
-        # Keep your existing focal/BCE/etc behavior
-        if str(getattr(self.hparams, "loss_function", "Focal")).lower() == "focal":
-            return self.loss(
-                y_hat,
-                y,
-                alpha=1 - self.hparams.pos_class_weight,
-                gamma=2,
-                reduction="mean",
-            )
+        # --- 3) Use a regression loss for continuous, otherwise keep your current loss (e.g., Focal) ---
+        if is_continuous:
+            # SmoothL1 (Huber) is robust and stable; swap to F.mse_loss if you prefer.
+            return F.smooth_l1_loss(y_hat, y, beta=0.5)
         else:
-            return self.loss(y_hat, y) 
+            # Keep your existing focal/BCE/etc behavior
+            if str(getattr(self.hparams, "loss_function", "Focal")).lower() == "focal":
+                return self.loss(
+                    y_hat,
+                    y,
+                    alpha=1 - self.hparams.pos_class_weight,
+                    gamma=2,
+                    reduction="mean",
+                )
+            else:
+                return self.loss(y_hat, y) 
