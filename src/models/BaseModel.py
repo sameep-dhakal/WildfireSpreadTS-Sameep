@@ -532,7 +532,14 @@ class BaseModel(pl.LightningModule, ABC):
 
         loss = self.compute_loss(y_hat, y)
         # changing to val ap to match test metric
-        ap = self.val_avg_precision(y_hat, y)
+
+        # sameep changed it
+        # ap = self.val_avg_precision(y_hat, y)
+
+        ap = self.val_avg_precision(
+            y_hat.squeeze(1) if y_hat.dim() == 4 else y_hat,         # [B,H,W]
+            (y > 0).to(torch.int).squeeze(1) if y.dim() == 4 else (y > 0).to(torch.int)  # [B,H,W]
+        )
         f1 = self.val_f1(y_hat, y)
         self.log(
             "val_loss",
