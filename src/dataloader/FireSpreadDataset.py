@@ -178,30 +178,31 @@ class FireSpreadDataset(Dataset):
         if self.load_from_hdf5:
             hdf5_path = self.imgs_per_fire[found_fire_year][found_fire_name][0]
             with h5py.File(hdf5_path, 'r') as f:
-                # Read from the start up to label day so streak is global
-                imgs_full = f["data"][:end_index]     # (T_full+1, C, H, W)
+                imgs_full = f["data"][:end_index]  # (T_full+1, C, H, W)
 
                 if self.return_doy:
                     doys = f["data"].attrs["img_dates"][:(end_index-1)]
                     doys = self.img_dates_to_doys(doys)
                     doys = torch.Tensor(doys)
 
-            # Split like before
-            x_full, y = np.split(imgs_full, [-1], axis=0)   # x_full: (T_full, C, H, W), y: (1,C,H,W)
-            y = y[0, -1, ...]                               # (H, W)
+            # Split inputs and label
+            x_full, y = np.split(imgs_full, [-1], axis=0)   # (T_full, C, H, W), (1,C,H,W)
+            y = y[0, -1, ...]                               # (H, W) target
 
-            # Build binary mask on the full history from your existing AF channel (last original feature)
-            binary_af_full = (x_full[:, -1:, ...] > 0).astype(np.float32)  # (T_full, 1, H, W)
+            # Compute GLOBAL binary mask across full history
+            binary_full = (x_full[:, -1:, ...] > 0).astype(np.float32)  # (T_full,1,H,W)
 
-            # Global burn streak over the full history
-            streak_full = self.compute_burn_streak_np(binary_af_full)      # (T_full, 1, H, W)
+            # Compute GLOBAL burn streak
+            streak_full = self.compute_burn_streak_np(binary_full)       # (T_full,1,H,W)
 
-            # Now slice only the input window (last T days before label)
+            # Slice your input window
             start_idx = in_fire_index
-            end_idx_inputs = end_index - 1  # inputs exclude the label day
+            end_idx_inputs = end_index - 1
             x = x_full[start_idx:end_idx_inputs]                         # (T, C, H, W)
-            binary_af_mask = binary_af_full[start_idx:end_idx_inputs]    # (T, 1, H, W)
-            burn_streak    = streak_full[start_idx:end_idx_inputs]       # (T, 1, H, W)
+            burn_streak_window = streak_full[start_idx:end_idx_inputs]   # (T,1,H,W)
+
+            # Save burn streak for later (preprocess_and_augment)
+            self._precomputed_burn_streak = burn_streak_window
 
 
         else:
@@ -348,185 +349,90 @@ class FireSpreadDataset(Dataset):
 
         return x
 
-    # def preprocess_and_augment(self, x, y):
-    #     """_summary_ Preprocesses and augments the input data. 
-    #     This includes: 
-    #     1. Slight preprocessing of active fire features, if loading from TIF files.
-    #     2. Geometric data augmentation.
-    #     3. Applying sin to degree features, to ensure that the extreme degree values are close in feature space.
-    #     4. Standardization of features. 
-    #     5. Addition of the binary active fire mask, as an addition to the fire mask that indicates the time of detection. 
-    #     6. One-hot encoding of land cover classes.
-
-    #     Args:
-    #         x (_type_): _description_ Input data, of shape (time_steps, features, height, width)
-    #         y (_type_): _description_ Target data, next day's binary active fire mask, of shape (height, width)
-
-    #     Returns:
-    #         _type_: _description_
-    #     """
-
-    #     x, y = torch.Tensor(x), torch.Tensor(y)
-
-    #     # Preprocessing that has been done in HDF files already
-    #     if not self.load_from_hdf5:
-
-    #         # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
-    #         # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
-    #         # them with 0 instead.
-    #         x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0)
-    #         y = torch.nan_to_num(y, nan=0.0)
-
-    #         # Turn active fire detection time from hhmm to hh.
-    #         x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
-
-    #     y = (y > 0).long()
-
-    #     # Augmentation has to come before normalization, because we have to correct the angle features when we change
-    #     # the orientation of the image.
-    #     if self.is_train:
-    #         x, y = self.augment(x, y)
-    #     else:
-    #         x, y = self.center_crop_x32(x, y)
-        
-    #     # If using a model that expects images of larger size, use zero-padding 
-    #     if self.is_pad:
-    #         x, y = self.zero_pad_to_size(x, y)
-        
-    #     # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
-    #     # close in feature space, since they are also close in reality.
-    #     x[:, self.indices_of_degree_features, ...] = torch.sin(
-    #         torch.deg2rad(x[:, self.indices_of_degree_features, ...]))
-
-    #     # Compute binary mask of active fire pixels before normalization changes what 0 means. 
-    #     binary_af_mask = (x[:, -1:, ...] > 0).float()
-
-    #     # sameep added code to calculate the burn streak and concatenate it as well
-    #     burn_streak = self.compute_burn_streak_torch(binary_af_mask)
-
-    #     x = self.standardize_features(x)
-
-    #     # Adds the binary fire mask as an additional channel to the input data.
-    #     # x = torch.cat([x, binary_af_mask], axis=1)
-
-    #     # sameed concatenated the  burn streak as well
-    #     x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
-        
-
-    #     # Replace NaN values with 0, thereby essentially setting them to the mean of the respective feature.
-    #     x = torch.nan_to_num(x, nan=0.0)
-
-    #     # Create land cover class one-hot encoding, put it where the land cover integer was
-    #     new_shape = (x.shape[0], x.shape[2], x.shape[3],
-    #                  self.one_hot_matrix.shape[0])
-    #     # -1 because land cover classes start at 1
-    #     landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
-    #     landcover_encoding = self.one_hot_matrix[landcover_classes_flattened].reshape(
-    #         new_shape).permute(0, 3, 1, 2)
-    #     x = torch.concatenate(
-    #         [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
-
-    #     return x, y
-
     def preprocess_and_augment(self, x, y):
-        """
-        Preprocess, augment, and assemble input features.
+        """_summary_ Preprocesses and augments the input data. 
+        This includes: 
+        1. Slight preprocessing of active fire features, if loading from TIF files.
+        2. Geometric data augmentation.
+        3. Applying sin to degree features, to ensure that the extreme degree values are close in feature space.
+        4. Standardization of features. 
+        5. Addition of the binary active fire mask, as an addition to the fire mask that indicates the time of detection. 
+        6. One-hot encoding of land cover classes.
 
-        - Uses globally computed burn_streak for the current window if available
-        (set in __getitem__ as self._precomputed_burn_streak with shape (T,1,H,W)).
-        - Keeps binary AF mask as the LAST channel.
-        - Inserts burn_streak RIGHT BEFORE the binary channel.
-        - Performs land-cover one-hot replacement before normalization.
-        - Normalizes ONLY original features (not burn_streak or binary).
+        Args:
+            x (_type_): _description_ Input data, of shape (time_steps, features, height, width)
+            y (_type_): _description_ Target data, next day's binary active fire mask, of shape (height, width)
+
+        Returns:
+            _type_: _description_
         """
 
-        # Convert to tensors
         x, y = torch.Tensor(x), torch.Tensor(y)
 
-        # If reading from TIFs (not HDF5), keep your existing cleanup
+        # Preprocessing that has been done in HDF files already
         if not self.load_from_hdf5:
-            # Active-fire source band: NaNs -> 0, and hhmm -> hh
-            x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0.0)
+
+            # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
+            # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
+            # them with 0 instead.
+            x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0)
             y = torch.nan_to_num(y, nan=0.0)
+
+            # Turn active fire detection time from hhmm to hh.
             x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
 
-        # Binarize label
         y = (y > 0).long()
 
-        # ----------------------------------------------------------------------
-        # Bring in precomputed GLOBAL burn_streak for this window (if set in __getitem__)
-        # Shape expected: (T, 1, H, W)
-        # ----------------------------------------------------------------------
+        # Augmentation has to come before normalization, because we have to correct the angle features when we change
+        # the orientation of the image.
+        if self.is_train:
+            x, y = self.augment(x, y)
+        else:
+            x, y = self.center_crop_x32(x, y)
+        
+        # If using a model that expects images of larger size, use zero-padding 
+        if self.is_pad:
+            x, y = self.zero_pad_to_size(x, y)
+        
+        # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
+        # close in feature space, since they are also close in reality.
+        x[:, self.indices_of_degree_features, ...] = torch.sin(
+            torch.deg2rad(x[:, self.indices_of_degree_features, ...]))
+
+        # Compute binary mask of active fire pixels before normalization changes what 0 means. 
+        binary_af_mask = (x[:, -1:, ...] > 0).float()
+
+        # sameep added code to calculate the burn streak and concatenate it as well
+        # Use precomputed burn streak from __getitem__ (already global)
         burn_streak = None
         if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
             burn_streak = torch.from_numpy(self._precomputed_burn_streak).float()
-            # clear after reading to avoid accidental reuse
-            self._precomputed_burn_streak = None
+            self._precomputed_burn_streak = None  # clear after use
 
-        # -----------------------------
-        # Geometric augmentation / crop
-        # -----------------------------
-        if self.is_train:
-            if burn_streak is not None:
-                # augment x,y and burn_streak together so spatial alignment is preserved
-                x, y, [burn_streak] = self.augment(x, y, extras=[burn_streak])
-            else:
-                x, y = self.augment(x, y)
-        else:
-            # deterministic center-crop and optional pad (apply to burn_streak too)
-            x, y = self.center_crop_x32(x, y)
-            if burn_streak is not None:
-                burn_streak, _tmp = self.center_crop_x32(burn_streak, torch.zeros_like(y))
-            if self.is_pad:
-                x, y = self.zero_pad_to_size(x, y)
-                if burn_streak is not None:
-                    burn_streak, _tmp = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
-
-        # ----------------------------------------------------------------------
-        # Land-cover one-hot: replace integer class band at channel 16 by one-hot
-        # (Keep EXACTLY your original logic)
-        # ----------------------------------------------------------------------
-        # new_shape: (T, H, W, n_classes)
-        new_shape = (x.shape[0], x.shape[2], x.shape[3], self.one_hot_matrix.shape[0])
-        # land-cover classes in band 16, classes are 1..K → convert to 0..K-1
-        landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
-        landcover_encoding = self.one_hot_matrix[landcover_classes_flattened] \
-            .reshape(new_shape) \
-            .permute(0, 3, 1, 2)  # -> (T, K, H, W)
-
-        # Replace channel 16 with its one-hot expansion
-        x = torch.cat([x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
-
-        # ----------------------------------------------------------------------
-        # Angle features to sin-space (keep your degree index list)
-        # ----------------------------------------------------------------------
-        x[:, self.indices_of_degree_features, ...] = torch.sin(
-            torch.deg2rad(x[:, self.indices_of_degree_features, ...])
-        )
-
-        # ----------------------------------------------------------------------
-        # Compute your binary AF mask from x AFTER augmentation and one-hot
-        # Keep EXACT behavior: use the LAST ORIGINAL FEATURE for mask (x[:, -1:, ...])
-        # ----------------------------------------------------------------------
-        binary_af_mask = (x[:, -1:, ...] > 0).float()  # shape (T, 1, H, W)
-
-        # ----------------------------------------------------------------------
-        # Standardize ONLY the original features (NOT burn_streak or binary)
-        # Your standardize_features expects broadcasting-ready means/stds
-        # ----------------------------------------------------------------------
         x = self.standardize_features(x)
 
-        # ----------------------------------------------------------------------
-        # Append burn_streak (if available) BEFORE binary, then append binary
-        # This makes burn_streak second-to-last, and binary the LAST channel.
-        # ----------------------------------------------------------------------
+        # Adds the binary fire mask as an additional channel to the input data.
+        # x = torch.cat([x, binary_af_mask], axis=1)
+
+        # sameed concatenated the  burn streak as well
         if burn_streak is not None:
             x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
         else:
             x = torch.cat([x, binary_af_mask], dim=1)
+        
 
-        # Safety: NaNs → 0
+        # Replace NaN values with 0, thereby essentially setting them to the mean of the respective feature.
         x = torch.nan_to_num(x, nan=0.0)
+
+        # Create land cover class one-hot encoding, put it where the land cover integer was
+        new_shape = (x.shape[0], x.shape[2], x.shape[3],
+                     self.one_hot_matrix.shape[0])
+        # -1 because land cover classes start at 1
+        landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
+        landcover_encoding = self.one_hot_matrix[landcover_classes_flattened].reshape(
+            new_shape).permute(0, 3, 1, 2)
+        x = torch.concatenate(
+            [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
 
         return x, y
 
@@ -702,8 +608,31 @@ class FireSpreadDataset(Dataset):
             _type_: _description_ Tuple of lists of integers, first list contains static feature indices, second list contains dynamic feature indices.
         """
         static_feature_ids = [12,13,14] + list(range(16,33))
-        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,41))
+        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,42))
         return static_feature_ids, dynamic_feature_ids
+    
+
+    @staticmethod
+    def compute_burn_streak_np(binary_mask_full: np.ndarray) -> np.ndarray:
+        """
+        Compute consecutive burn-day counts per pixel across the FULL timeline.
+
+        Args:
+            binary_mask_full: (T, 1, H, W) np.float32, 0/1 for all days up to the label
+
+        Returns:
+            (T, 1, H, W) np.uint16 with counts (1,2,3,...), resets to 0 after gaps
+        """
+        T = binary_mask_full.shape[0]
+        streak = np.zeros_like(binary_mask_full, dtype=np.uint16)
+        for t in range(T):
+            if t == 0:
+                streak[0] = (binary_mask_full[0] > 0).astype(np.uint16)
+            else:
+                burning = (binary_mask_full[t] > 0)
+                streak[t] = np.where(burning, streak[t-1] + 1, 0).astype(np.uint16)
+        return streak
+
 
     @staticmethod
     def get_static_and_dynamic_features_to_keep(features_to_keep:Optional[List[int]]):
