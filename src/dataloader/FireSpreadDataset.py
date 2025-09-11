@@ -121,24 +121,16 @@ class FireSpreadDataset(Dataset):
     # sameep added code to calcualte the fire burn pixels per day!
     # fire_bin: shape (T, H, W) with 0/1
     @staticmethod
-    def compute_burn_streak_np(binary_af_mask: np.ndarray) -> np.ndarray:
-        """
-        Compute consecutive burn-day counts per pixel across the FULL timeline.
-
-        Args:
-            binary_af_mask: (T, 1, H, W) np.float32 (0/1); T = all days up to the label day
-
-        Returns:
-            (T, 1, H, W) np.uint16 with counts 0,1,2,... (resets to 0 on non-burn days)
-        """
-        T = binary_af_mask.shape[0]
-        streak = np.zeros_like(binary_af_mask, dtype=np.uint16)
+    def compute_burn_streak_np(binary_mask_full: np.ndarray) -> np.ndarray:
+        T = binary_mask_full.shape[0]
+        # use int32 instead of uint16
+        streak = np.zeros_like(binary_mask_full, dtype=np.int32)
         for t in range(T):
             if t == 0:
-                streak[0] = (binary_af_mask[0] > 0).astype(np.uint16)
+                streak[0] = (binary_mask_full[0] > 0).astype(np.int32)
             else:
-                burning = (binary_af_mask[t] > 0)
-                streak[t] = np.where(burning, streak[t-1] + 1, 0).astype(np.uint16)
+                burning = (binary_mask_full[t] > 0)
+                streak[t] = np.where(burning, streak[t-1] + 1, 0).astype(np.int32)
         return streak
 
     # code changed above this!!!!!!!!!!!!!!!!!
@@ -406,7 +398,7 @@ class FireSpreadDataset(Dataset):
         # Use precomputed burn streak from __getitem__ (already global)
         burn_streak = None
         if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
-            burn_streak = torch.from_numpy(self._precomputed_burn_streak).float()
+            burn_streak = torch.from_numpy(self._precomputed_burn_streak.astype(np.int32)).float()
             self._precomputed_burn_streak = None  # clear after use
 
         x = self.standardize_features(x)
