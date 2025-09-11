@@ -428,107 +428,107 @@ class FireSpreadDataset(Dataset):
 
     #     return x, y
 
-def preprocess_and_augment(self, x, y):
-    """
-    Preprocess, augment, and assemble input features.
+    def preprocess_and_augment(self, x, y):
+        """
+        Preprocess, augment, and assemble input features.
 
-    - Uses globally computed burn_streak for the current window if available
-      (set in __getitem__ as self._precomputed_burn_streak with shape (T,1,H,W)).
-    - Keeps binary AF mask as the LAST channel.
-    - Inserts burn_streak RIGHT BEFORE the binary channel.
-    - Performs land-cover one-hot replacement before normalization.
-    - Normalizes ONLY original features (not burn_streak or binary).
-    """
+        - Uses globally computed burn_streak for the current window if available
+        (set in __getitem__ as self._precomputed_burn_streak with shape (T,1,H,W)).
+        - Keeps binary AF mask as the LAST channel.
+        - Inserts burn_streak RIGHT BEFORE the binary channel.
+        - Performs land-cover one-hot replacement before normalization.
+        - Normalizes ONLY original features (not burn_streak or binary).
+        """
 
-    # Convert to tensors
-    x, y = torch.Tensor(x), torch.Tensor(y)
+        # Convert to tensors
+        x, y = torch.Tensor(x), torch.Tensor(y)
 
-    # If reading from TIFs (not HDF5), keep your existing cleanup
-    if not self.load_from_hdf5:
-        # Active-fire source band: NaNs -> 0, and hhmm -> hh
-        x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0.0)
-        y = torch.nan_to_num(y, nan=0.0)
-        x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
+        # If reading from TIFs (not HDF5), keep your existing cleanup
+        if not self.load_from_hdf5:
+            # Active-fire source band: NaNs -> 0, and hhmm -> hh
+            x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0.0)
+            y = torch.nan_to_num(y, nan=0.0)
+            x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
 
-    # Binarize label
-    y = (y > 0).long()
+        # Binarize label
+        y = (y > 0).long()
 
-    # ----------------------------------------------------------------------
-    # Bring in precomputed GLOBAL burn_streak for this window (if set in __getitem__)
-    # Shape expected: (T, 1, H, W)
-    # ----------------------------------------------------------------------
-    burn_streak = None
-    if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
-        burn_streak = torch.from_numpy(self._precomputed_burn_streak).float()
-        # clear after reading to avoid accidental reuse
-        self._precomputed_burn_streak = None
+        # ----------------------------------------------------------------------
+        # Bring in precomputed GLOBAL burn_streak for this window (if set in __getitem__)
+        # Shape expected: (T, 1, H, W)
+        # ----------------------------------------------------------------------
+        burn_streak = None
+        if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
+            burn_streak = torch.from_numpy(self._precomputed_burn_streak).float()
+            # clear after reading to avoid accidental reuse
+            self._precomputed_burn_streak = None
 
-    # -----------------------------
-    # Geometric augmentation / crop
-    # -----------------------------
-    if self.is_train:
-        if burn_streak is not None:
-            # augment x,y and burn_streak together so spatial alignment is preserved
-            x, y, [burn_streak] = self.augment(x, y, extras=[burn_streak])
-        else:
-            x, y = self.augment(x, y)
-    else:
-        # deterministic center-crop and optional pad (apply to burn_streak too)
-        x, y = self.center_crop_x32(x, y)
-        if burn_streak is not None:
-            burn_streak, _tmp = self.center_crop_x32(burn_streak, torch.zeros_like(y))
-        if self.is_pad:
-            x, y = self.zero_pad_to_size(x, y)
+        # -----------------------------
+        # Geometric augmentation / crop
+        # -----------------------------
+        if self.is_train:
             if burn_streak is not None:
-                burn_streak, _tmp = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
+                # augment x,y and burn_streak together so spatial alignment is preserved
+                x, y, [burn_streak] = self.augment(x, y, extras=[burn_streak])
+            else:
+                x, y = self.augment(x, y)
+        else:
+            # deterministic center-crop and optional pad (apply to burn_streak too)
+            x, y = self.center_crop_x32(x, y)
+            if burn_streak is not None:
+                burn_streak, _tmp = self.center_crop_x32(burn_streak, torch.zeros_like(y))
+            if self.is_pad:
+                x, y = self.zero_pad_to_size(x, y)
+                if burn_streak is not None:
+                    burn_streak, _tmp = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
 
-    # ----------------------------------------------------------------------
-    # Land-cover one-hot: replace integer class band at channel 16 by one-hot
-    # (Keep EXACTLY your original logic)
-    # ----------------------------------------------------------------------
-    # new_shape: (T, H, W, n_classes)
-    new_shape = (x.shape[0], x.shape[2], x.shape[3], self.one_hot_matrix.shape[0])
-    # land-cover classes in band 16, classes are 1..K → convert to 0..K-1
-    landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
-    landcover_encoding = self.one_hot_matrix[landcover_classes_flattened] \
-        .reshape(new_shape) \
-        .permute(0, 3, 1, 2)  # -> (T, K, H, W)
+        # ----------------------------------------------------------------------
+        # Land-cover one-hot: replace integer class band at channel 16 by one-hot
+        # (Keep EXACTLY your original logic)
+        # ----------------------------------------------------------------------
+        # new_shape: (T, H, W, n_classes)
+        new_shape = (x.shape[0], x.shape[2], x.shape[3], self.one_hot_matrix.shape[0])
+        # land-cover classes in band 16, classes are 1..K → convert to 0..K-1
+        landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
+        landcover_encoding = self.one_hot_matrix[landcover_classes_flattened] \
+            .reshape(new_shape) \
+            .permute(0, 3, 1, 2)  # -> (T, K, H, W)
 
-    # Replace channel 16 with its one-hot expansion
-    x = torch.cat([x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
+        # Replace channel 16 with its one-hot expansion
+        x = torch.cat([x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
 
-    # ----------------------------------------------------------------------
-    # Angle features to sin-space (keep your degree index list)
-    # ----------------------------------------------------------------------
-    x[:, self.indices_of_degree_features, ...] = torch.sin(
-        torch.deg2rad(x[:, self.indices_of_degree_features, ...])
-    )
+        # ----------------------------------------------------------------------
+        # Angle features to sin-space (keep your degree index list)
+        # ----------------------------------------------------------------------
+        x[:, self.indices_of_degree_features, ...] = torch.sin(
+            torch.deg2rad(x[:, self.indices_of_degree_features, ...])
+        )
 
-    # ----------------------------------------------------------------------
-    # Compute your binary AF mask from x AFTER augmentation and one-hot
-    # Keep EXACT behavior: use the LAST ORIGINAL FEATURE for mask (x[:, -1:, ...])
-    # ----------------------------------------------------------------------
-    binary_af_mask = (x[:, -1:, ...] > 0).float()  # shape (T, 1, H, W)
+        # ----------------------------------------------------------------------
+        # Compute your binary AF mask from x AFTER augmentation and one-hot
+        # Keep EXACT behavior: use the LAST ORIGINAL FEATURE for mask (x[:, -1:, ...])
+        # ----------------------------------------------------------------------
+        binary_af_mask = (x[:, -1:, ...] > 0).float()  # shape (T, 1, H, W)
 
-    # ----------------------------------------------------------------------
-    # Standardize ONLY the original features (NOT burn_streak or binary)
-    # Your standardize_features expects broadcasting-ready means/stds
-    # ----------------------------------------------------------------------
-    x = self.standardize_features(x)
+        # ----------------------------------------------------------------------
+        # Standardize ONLY the original features (NOT burn_streak or binary)
+        # Your standardize_features expects broadcasting-ready means/stds
+        # ----------------------------------------------------------------------
+        x = self.standardize_features(x)
 
-    # ----------------------------------------------------------------------
-    # Append burn_streak (if available) BEFORE binary, then append binary
-    # This makes burn_streak second-to-last, and binary the LAST channel.
-    # ----------------------------------------------------------------------
-    if burn_streak is not None:
-        x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
-    else:
-        x = torch.cat([x, binary_af_mask], dim=1)
+        # ----------------------------------------------------------------------
+        # Append burn_streak (if available) BEFORE binary, then append binary
+        # This makes burn_streak second-to-last, and binary the LAST channel.
+        # ----------------------------------------------------------------------
+        if burn_streak is not None:
+            x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
+        else:
+            x = torch.cat([x, binary_af_mask], dim=1)
 
-    # Safety: NaNs → 0
-    x = torch.nan_to_num(x, nan=0.0)
+        # Safety: NaNs → 0
+        x = torch.nan_to_num(x, nan=0.0)
 
-    return x, y
+        return x, y
 
 
     def augment(self, x, y, extras=None):
