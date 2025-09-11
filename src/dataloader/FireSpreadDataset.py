@@ -624,10 +624,11 @@ class FireSpreadDataset(Dataset):
             (T, 1, H, W) np.uint16 with counts (1,2,3,...), resets to 0 after gaps
         """
         T = binary_mask_full.shape[0]
-        streak = np.zeros_like(binary_mask_full, dtype=np.uint16)
+        streak = np.zeros_like(binary_mask_full, dtype=np.int32)   # <- use int32 instead of uint16
+
         for t in range(T):
             if t == 0:
-                streak[0] = (binary_mask_full[0] > 0).astype(np.uint16)
+                streak[0] = (binary_mask_full[0] > 0).astype(np.int32)
             else:
                 burning = (binary_mask_full[t] > 0)
                 streak[t] = np.where(burning, streak[t-1] + 1, 0).astype(np.uint16)
