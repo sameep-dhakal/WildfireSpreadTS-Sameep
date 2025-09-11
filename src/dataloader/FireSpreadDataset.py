@@ -341,100 +341,161 @@ class FireSpreadDataset(Dataset):
 
         return x
 
+    # def preprocess_and_augment(self, x, y):
+    #     """_summary_ Preprocesses and augments the input data. 
+    #     This includes: 
+    #     1. Slight preprocessing of active fire features, if loading from TIF files.
+    #     2. Geometric data augmentation.
+    #     3. Applying sin to degree features, to ensure that the extreme degree values are close in feature space.
+    #     4. Standardization of features. 
+    #     5. Addition of the binary active fire mask, as an addition to the fire mask that indicates the time of detection. 
+    #     6. One-hot encoding of land cover classes.
+
+    #     Args:
+    #         x (_type_): _description_ Input data, of shape (time_steps, features, height, width)
+    #         y (_type_): _description_ Target data, next day's binary active fire mask, of shape (height, width)
+
+    #     Returns:
+    #         _type_: _description_
+    #     """
+
+    #     x, y = torch.Tensor(x), torch.Tensor(y)
+
+    #     # Preprocessing that has been done in HDF files already
+    #     if not self.load_from_hdf5:
+
+    #         # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
+    #         # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
+    #         # them with 0 instead.
+    #         x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0)
+    #         y = torch.nan_to_num(y, nan=0.0)
+
+    #         # Turn active fire detection time from hhmm to hh.
+    #         x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
+
+    #     y = (y > 0).long()
+
+    #     # Augmentation has to come before normalization, because we have to correct the angle features when we change
+    #     # the orientation of the image.
+    #     # sameep change the augmentaton for fire_Days
+    #     # if self.is_train:
+    #     #     x, y = self.augment(x, y)
+    #     # else:
+    #     #     x, y = self.center_crop_x32(x, y)
+
+
+    #     # sameep added code to calculate the burn streak and concatenate it as well
+    #     # Use precomputed burn streak from __getitem__ (already global)
+    #     burn_streak = None
+    #     if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
+    #         burn_streak = torch.from_numpy(self._precomputed_burn_streak.astype(np.int32)).float()
+    #         self._precomputed_burn_streak = None  # clear after use
+
+    #     # Apply same augment/crop/pad to burn_streak so it matches x
+    #     if self.is_train:
+    #         x, y, [burn_streak] = self.augment(x, y, extras=[burn_streak])
+    #     else:
+    #         x, y = self.center_crop_x32(x, y)
+    #         burn_streak, _ = self.center_crop_x32(burn_streak, torch.zeros_like(y))
+    #         if self.is_pad:
+    #             x, y = self.zero_pad_to_size(x, y)
+    #             burn_streak, _ = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
+        
+        
+    #     # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
+    #     # close in feature space, since they are also close in reality.
+    #     x[:, self.indices_of_degree_features, ...] = torch.sin(
+    #         torch.deg2rad(x[:, self.indices_of_degree_features, ...]))
+
+    #     # Compute binary mask of active fire pixels before normalization changes what 0 means. 
+    #     binary_af_mask = (x[:, -1:, ...] > 0).float()
+
+
+    #     x = self.standardize_features(x)
+
+    #     # Adds the binary fire mask as an additional channel to the input data.
+    #     # x = torch.cat([x, binary_af_mask], axis=1)
+
+    #     # sameed concatenated the  burn streak as well
+    #     if burn_streak is not None:
+    #         x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
+    #     else:
+    #         x = torch.cat([x, binary_af_mask], dim=1)
+        
+
+    #     # Replace NaN values with 0, thereby essentially setting them to the mean of the respective feature.
+    #     x = torch.nan_to_num(x, nan=0.0)
+
+    #     # Create land cover class one-hot encoding, put it where the land cover integer was
+    #     new_shape = (x.shape[0], x.shape[2], x.shape[3],
+    #                  self.one_hot_matrix.shape[0])
+    #     # -1 because land cover classes start at 1
+    #     landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
+    #     landcover_encoding = self.one_hot_matrix[landcover_classes_flattened].reshape(
+    #         new_shape).permute(0, 3, 1, 2)
+    #     x = torch.concatenate(
+    #         [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
+
+    #     return x, y
+
+
+
+
     def preprocess_and_augment(self, x, y):
-        """_summary_ Preprocesses and augments the input data. 
-        This includes: 
-        1. Slight preprocessing of active fire features, if loading from TIF files.
-        2. Geometric data augmentation.
-        3. Applying sin to degree features, to ensure that the extreme degree values are close in feature space.
-        4. Standardization of features. 
-        5. Addition of the binary active fire mask, as an addition to the fire mask that indicates the time of detection. 
-        6. One-hot encoding of land cover classes.
-
-        Args:
-            x (_type_): _description_ Input data, of shape (time_steps, features, height, width)
-            y (_type_): _description_ Target data, next day's binary active fire mask, of shape (height, width)
-
-        Returns:
-            _type_: _description_
-        """
-
         x, y = torch.Tensor(x), torch.Tensor(y)
 
-        # Preprocessing that has been done in HDF files already
         if not self.load_from_hdf5:
-
-            # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
-            # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
-            # them with 0 instead.
             x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0)
             y = torch.nan_to_num(y, nan=0.0)
-
-            # Turn active fire detection time from hhmm to hh.
             x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
 
         y = (y > 0).long()
 
-        # Augmentation has to come before normalization, because we have to correct the angle features when we change
-        # the orientation of the image.
-        # sameep change the augmentaton for fire_Days
-        # if self.is_train:
-        #     x, y = self.augment(x, y)
-        # else:
-        #     x, y = self.center_crop_x32(x, y)
-
-
-        # sameep added code to calculate the burn streak and concatenate it as well
-        # Use precomputed burn streak from __getitem__ (already global)
+        # --- Bring in precomputed burn_streak (already global, window-sliced) ---
         burn_streak = None
         if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
             burn_streak = torch.from_numpy(self._precomputed_burn_streak.astype(np.int32)).float()
-            self._precomputed_burn_streak = None  # clear after use
+            self._precomputed_burn_streak = None
+            # Append burn_streak temporarily so it is transformed along with x
+            x = torch.cat([x, burn_streak], dim=1)
 
-        # Apply same augment/crop/pad to burn_streak so it matches x
+        # --- Apply augment/crop/pad to x (burn_streak rides inside x) ---
         if self.is_train:
-            x, y, [burn_streak] = self.augment(x, y, extras=[burn_streak])
+            x, y = self.augment(x, y)
         else:
             x, y = self.center_crop_x32(x, y)
-            burn_streak, _ = self.center_crop_x32(burn_streak, torch.zeros_like(y))
             if self.is_pad:
                 x, y = self.zero_pad_to_size(x, y)
-                burn_streak, _ = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
-        
-        
-        # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
-        # close in feature space, since they are also close in reality.
+
+        # --- Split burn_streak back out if it exists ---
+        if burn_streak is not None:
+            burn_streak = x[:, -1:, ...]
+            x = x[:, :-1, ...]   # remove from main x
+
+        # --- Angle features sin transform ---
         x[:, self.indices_of_degree_features, ...] = torch.sin(
             torch.deg2rad(x[:, self.indices_of_degree_features, ...]))
 
-        # Compute binary mask of active fire pixels before normalization changes what 0 means. 
+        # --- Binary mask (from AF band) ---
         binary_af_mask = (x[:, -1:, ...] > 0).float()
 
-
+        # --- Normalize only continuous features ---
         x = self.standardize_features(x)
 
-        # Adds the binary fire mask as an additional channel to the input data.
-        # x = torch.cat([x, binary_af_mask], axis=1)
-
-        # sameed concatenated the  burn streak as well
+        # --- Final concatenate ---
         if burn_streak is not None:
             x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
         else:
             x = torch.cat([x, binary_af_mask], dim=1)
-        
 
-        # Replace NaN values with 0, thereby essentially setting them to the mean of the respective feature.
         x = torch.nan_to_num(x, nan=0.0)
 
-        # Create land cover class one-hot encoding, put it where the land cover integer was
-        new_shape = (x.shape[0], x.shape[2], x.shape[3],
-                     self.one_hot_matrix.shape[0])
-        # -1 because land cover classes start at 1
+        # --- Land cover one-hot ---
+        new_shape = (x.shape[0], x.shape[2], x.shape[3], self.one_hot_matrix.shape[0])
         landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
         landcover_encoding = self.one_hot_matrix[landcover_classes_flattened].reshape(
             new_shape).permute(0, 3, 1, 2)
-        x = torch.concatenate(
-            [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
+        x = torch.concatenate([x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
 
         return x, y
 
