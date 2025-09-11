@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unetltae-rawfire-nobinary
+project:  wildfire-prediction-unetltae-rawfire-fireburndays
 command:
   - ${env}
   - python
