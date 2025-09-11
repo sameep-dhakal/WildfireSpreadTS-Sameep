@@ -377,10 +377,29 @@ class FireSpreadDataset(Dataset):
 
         # Augmentation has to come before normalization, because we have to correct the angle features when we change
         # the orientation of the image.
+        # sameep change the augmentaton for fire_Days
+        # if self.is_train:
+        #     x, y = self.augment(x, y)
+        # else:
+        #     x, y = self.center_crop_x32(x, y)
+
+
+        # sameep added code to calculate the burn streak and concatenate it as well
+        # Use precomputed burn streak from __getitem__ (already global)
+        burn_streak = None
+        if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
+            burn_streak = torch.from_numpy(self._precomputed_burn_streak.astype(np.int32)).float()
+            self._precomputed_burn_streak = None  # clear after use
+
+        # Apply same augment/crop/pad to burn_streak so it matches x
         if self.is_train:
-            x, y = self.augment(x, y)
+            x, y, [burn_streak] = self.augment(x, y, extras=[burn_streak])
         else:
             x, y = self.center_crop_x32(x, y)
+            burn_streak, _ = self.center_crop_x32(burn_streak, torch.zeros_like(y))
+            if self.is_pad:
+                x, y = self.zero_pad_to_size(x, y)
+                burn_streak, _ = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
         
         # If using a model that expects images of larger size, use zero-padding 
         if self.is_pad:
@@ -394,12 +413,6 @@ class FireSpreadDataset(Dataset):
         # Compute binary mask of active fire pixels before normalization changes what 0 means. 
         binary_af_mask = (x[:, -1:, ...] > 0).float()
 
-        # sameep added code to calculate the burn streak and concatenate it as well
-        # Use precomputed burn streak from __getitem__ (already global)
-        burn_streak = None
-        if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
-            burn_streak = torch.from_numpy(self._precomputed_burn_streak.astype(np.int32)).float()
-            self._precomputed_burn_streak = None  # clear after use
 
         x = self.standardize_features(x)
 
