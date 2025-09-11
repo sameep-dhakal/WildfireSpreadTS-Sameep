@@ -401,9 +401,6 @@ class FireSpreadDataset(Dataset):
                 x, y = self.zero_pad_to_size(x, y)
                 burn_streak, _ = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
         
-        # If using a model that expects images of larger size, use zero-padding 
-        if self.is_pad:
-            x, y = self.zero_pad_to_size(x, y)
         
         # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
         # close in feature space, since they are also close in reality.
