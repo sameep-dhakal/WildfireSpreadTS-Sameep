@@ -118,91 +118,122 @@ class FireSpreadDataset(Dataset):
 
         return found_fire_year, found_fire_name, in_fire_index
     
-    # sameep added code to calcualte the fire burn pixels per day!
-    # fire_bin: shape (T, H, W) with 0/1
-    @staticmethod
-    def compute_burn_streak_np(binary_mask_full: np.ndarray) -> np.ndarray:
-        T = binary_mask_full.shape[0]
-        # use int32 instead of uint16
-        streak = np.zeros_like(binary_mask_full, dtype=np.int32)
-        for t in range(T):
-            if t == 0:
-                streak[0] = (binary_mask_full[0] > 0).astype(np.int32)
-            else:
-                burning = (binary_mask_full[t] > 0)
-                streak[t] = np.where(burning, streak[t-1] + 1, 0).astype(np.int32)
-        return streak
 
-    # code changed above this!!!!!!!!!!!!!!!!!
+    def _read_and_harmonize_bands(self, ds: rasterio.DatasetReader) -> np.ndarray:
+        """
+        Reads data from a rasterio dataset and ensures it has 23 bands.
+        If the source has 18 bands, it assumes the 5 weather forecast bands are missing
+        and inserts them as zero-filled placeholders.
+        """
+        band_count = ds.count
+        
+        if band_count == 23:
+            # This file is complete, read all bands as is.
+            return ds.read()
+            
+        elif band_count == 18:
+            # This file is missing the 5 forecast bands (indices 17-21).
+            # We need to construct a 23-band array manually.
+            data_18_bands = ds.read()
+            height, width = ds.height, ds.width
+            
+            # Create an empty array with the target shape (23 bands).
+            full_data = np.zeros((23, height, width), dtype=data_18_bands.dtype)
+            
+            # Copy the first 17 bands (indices 0-16) directly.
+            # These are VIIRS, NDVI, weather, terrain, etc.
+            full_data[0:17, :, :] = data_18_bands[0:17, :, :]
+            
+            # Bands 17-21 (forecasts) will remain zero as placeholders.
+            
+            # Copy the last band from the 18-band file (active fire) to the
+            # correct position in the 23-band array (index 22).
+            full_data[22, :, :] = data_18_bands[17, :, :]
+            
+            return full_data
+            
+        else:
+            # Handle unexpected band counts.
+            warnings.warn(f"Encountered a file with an unexpected number of bands: {band_count}. Skipping.", RuntimeWarning)
+            # Return a zero-filled array to prevent crashes, though this sample will be invalid.
+            return np.zeros((23, ds.height, ds.width), dtype=np.float32)
+        
+
+    # def load_imgs(self, found_fire_year, found_fire_name, in_fire_index):
+    #     """_summary_ Load the images corresponding to the specified data point from disk.
+
+    #     Args:
+    #         found_fire_year (_type_): _description_ Year of the fire that contains the data point.
+    #         found_fire_name (_type_): _description_ Name of the fire that contains the data point.
+    #         in_fire_index (_type_): _description_ Index of the data point within the fire.
+
+    #     Returns:
+    #         _type_: _description_ (x,y) or (x,y,doy) tuple, depending on whether return_doy is True or False. 
+    #         x is a tensor of shape (n_leading_observations, n_features, height, width), containing the input data. 
+    #         y is a tensor of shape (height, width) containing the binary next day's active fire mask.
+    #         doy is a tensor of shape (n_leading_observations) containing the day of the year for each observation.
+    #     """
+
+    #     in_fire_index += self.skip_initial_samples
+    #     end_index = (in_fire_index + self.n_leading_observations + 1)
+
+    #     if self.load_from_hdf5:
+    #         hdf5_path = self.imgs_per_fire[found_fire_year][found_fire_name][0]
+    #         with h5py.File(hdf5_path, 'r') as f:
+    #             imgs = f["data"][in_fire_index:end_index]
+    #             if self.return_doy:
+    #                 doys = f["data"].attrs["img_dates"][in_fire_index:(
+    #                     end_index-1)]
+    #                 doys = self.img_dates_to_doys(doys)
+    #                 doys = torch.Tensor(doys)
+    #         x, y = np.split(imgs, [-1], axis=0)
+    #         # Last image's active fire mask is used as label, rest is input data
+    #         y = y[0, -1, ...]
+    #     else:
+    #         imgs_to_load = self.imgs_per_fire[found_fire_year][found_fire_name][in_fire_index:end_index]
+    #         imgs = []
+    #         for img_path in imgs_to_load:
+    #             with rasterio.open(img_path, 'r') as ds:
+    #                 imgs.append(ds.read())
+    #         x = np.stack(imgs[:-1], axis=0)
+    #         y = imgs[-1][-1, ...]
+
+    #     if self.return_doy:
+    #         return x, y, doys
+    #     return x, y
+
 
     def load_imgs(self, found_fire_year, found_fire_name, in_fire_index):
-        """_summary_ Load the images corresponding to the specified data point from disk.
-
-        Args:
-            found_fire_year (_type_): _description_ Year of the fire that contains the data point.
-            found_fire_name (_type_): _description_ Name of the fire that contains the data point.
-            in_fire_index (_type_): _description_ Index of the data point within the fire.
-
-        Returns:
-            _type_: _description_ (x,y) or (x,y,doy) tuple, depending on whether return_doy is True or False. 
-            x is a tensor of shape (n_leading_observations, n_features, height, width), containing the input data. 
-            y is a tensor of shape (height, width) containing the binary next day's active fire mask.
-            doy is a tensor of shape (n_leading_observations) containing the day of the year for each observation.
+        """
+        Load the images corresponding to the specified data point from disk.
+        This version is updated to handle both 18-band and 23-band GeoTIFFs.
         """
 
         in_fire_index += self.skip_initial_samples
         end_index = (in_fire_index + self.n_leading_observations + 1)
 
-        # if self.load_from_hdf5:
-            # hdf5_path = self.imgs_per_fire[found_fire_year][found_fire_name][0]
-            # with h5py.File(hdf5_path, 'r') as f:
-            #     imgs = f["data"][in_fire_index:end_index]
-            #     if self.return_doy:
-            #         doys = f["data"].attrs["img_dates"][in_fire_index:(
-            #             end_index-1)]
-            #         doys = self.img_dates_to_doys(doys)
-            #         doys = torch.Tensor(doys)
-            # x, y = np.split(imgs, [-1], axis=0)
-            # # Last image's active fire mask is used as label, rest is input data
-            # y = y[0, -1, ...]
-
-        # sameep replaced code above this to get the burn pixel for full data
         if self.load_from_hdf5:
+            # HDF5 loading remains unchanged
             hdf5_path = self.imgs_per_fire[found_fire_year][found_fire_name][0]
             with h5py.File(hdf5_path, 'r') as f:
-                imgs_full = f["data"][:end_index]  # (T_full+1, C, H, W)
-
+                imgs = f["data"][in_fire_index:end_index]
                 if self.return_doy:
-                    doys = f["data"].attrs["img_dates"][:(end_index-1)]
+                    doys = f["data"].attrs["img_dates"][in_fire_index:(end_index-1)]
                     doys = self.img_dates_to_doys(doys)
                     doys = torch.Tensor(doys)
-
-            # Split inputs and label
-            x_full, y = np.split(imgs_full, [-1], axis=0)   # (T_full, C, H, W), (1,C,H,W)
-            y = y[0, -1, ...]                               # (H, W) target
-
-            # Compute GLOBAL binary mask across full history
-            binary_full = (x_full[:, -1:, ...] > 0).astype(np.float32)  # (T_full,1,H,W)
-
-            # Compute GLOBAL burn streak
-            streak_full = self.compute_burn_streak_np(binary_full)       # (T_full,1,H,W)
-
-            # Slice your input window
-            start_idx = in_fire_index
-            end_idx_inputs = end_index - 1
-            x = x_full[start_idx:end_idx_inputs]                         # (T, C, H, W)
-            burn_streak_window = streak_full[start_idx:end_idx_inputs]   # (T,1,H,W)
-
-            # Save burn streak for later (preprocess_and_augment)
-            self._precomputed_burn_streak = burn_streak_window
-
-
+            x, y = np.split(imgs, [-1], axis=0)
+            y = y[0, -1, ...]
         else:
+            # --- MODIFIED SECTION FOR TIF FILES ---
             imgs_to_load = self.imgs_per_fire[found_fire_year][found_fire_name][in_fire_index:end_index]
             imgs = []
             for img_path in imgs_to_load:
                 with rasterio.open(img_path, 'r') as ds:
-                    imgs.append(ds.read())
+                    # Use the new harmonizing function to read the data
+                    harmonized_img_data = self._read_and_harmonize_bands(ds)
+                    imgs.append(harmonized_img_data)
+            
+            # The rest of the logic works because 'imgs' now contains only 23-band arrays.
             x = np.stack(imgs[:-1], axis=0)
             y = imgs[-1][-1, ...]
 
@@ -341,166 +372,80 @@ class FireSpreadDataset(Dataset):
 
         return x
 
-    # def preprocess_and_augment(self, x, y):
-    #     """_summary_ Preprocesses and augments the input data. 
-    #     This includes: 
-    #     1. Slight preprocessing of active fire features, if loading from TIF files.
-    #     2. Geometric data augmentation.
-    #     3. Applying sin to degree features, to ensure that the extreme degree values are close in feature space.
-    #     4. Standardization of features. 
-    #     5. Addition of the binary active fire mask, as an addition to the fire mask that indicates the time of detection. 
-    #     6. One-hot encoding of land cover classes.
-
-    #     Args:
-    #         x (_type_): _description_ Input data, of shape (time_steps, features, height, width)
-    #         y (_type_): _description_ Target data, next day's binary active fire mask, of shape (height, width)
-
-    #     Returns:
-    #         _type_: _description_
-    #     """
-
-    #     x, y = torch.Tensor(x), torch.Tensor(y)
-
-    #     # Preprocessing that has been done in HDF files already
-    #     if not self.load_from_hdf5:
-
-    #         # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
-    #         # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
-    #         # them with 0 instead.
-    #         x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0)
-    #         y = torch.nan_to_num(y, nan=0.0)
-
-    #         # Turn active fire detection time from hhmm to hh.
-    #         x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
-
-    #     y = (y > 0).long()
-
-    #     # Augmentation has to come before normalization, because we have to correct the angle features when we change
-    #     # the orientation of the image.
-    #     # sameep change the augmentaton for fire_Days
-    #     # if self.is_train:
-    #     #     x, y = self.augment(x, y)
-    #     # else:
-    #     #     x, y = self.center_crop_x32(x, y)
-
-
-    #     # sameep added code to calculate the burn streak and concatenate it as well
-    #     # Use precomputed burn streak from __getitem__ (already global)
-    #     burn_streak = None
-    #     if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
-    #         burn_streak = torch.from_numpy(self._precomputed_burn_streak.astype(np.int32)).float()
-    #         self._precomputed_burn_streak = None  # clear after use
-
-    #     # Apply same augment/crop/pad to burn_streak so it matches x
-    #     if self.is_train:
-    #         x, y, [burn_streak] = self.augment(x, y, extras=[burn_streak])
-    #     else:
-    #         x, y = self.center_crop_x32(x, y)
-    #         burn_streak, _ = self.center_crop_x32(burn_streak, torch.zeros_like(y))
-    #         if self.is_pad:
-    #             x, y = self.zero_pad_to_size(x, y)
-    #             burn_streak, _ = self.zero_pad_to_size(burn_streak, torch.zeros_like(y))
-        
-        
-    #     # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
-    #     # close in feature space, since they are also close in reality.
-    #     x[:, self.indices_of_degree_features, ...] = torch.sin(
-    #         torch.deg2rad(x[:, self.indices_of_degree_features, ...]))
-
-    #     # Compute binary mask of active fire pixels before normalization changes what 0 means. 
-    #     binary_af_mask = (x[:, -1:, ...] > 0).float()
-
-
-    #     x = self.standardize_features(x)
-
-    #     # Adds the binary fire mask as an additional channel to the input data.
-    #     # x = torch.cat([x, binary_af_mask], axis=1)
-
-    #     # sameed concatenated the  burn streak as well
-    #     if burn_streak is not None:
-    #         x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
-    #     else:
-    #         x = torch.cat([x, binary_af_mask], dim=1)
-        
-
-    #     # Replace NaN values with 0, thereby essentially setting them to the mean of the respective feature.
-    #     x = torch.nan_to_num(x, nan=0.0)
-
-    #     # Create land cover class one-hot encoding, put it where the land cover integer was
-    #     new_shape = (x.shape[0], x.shape[2], x.shape[3],
-    #                  self.one_hot_matrix.shape[0])
-    #     # -1 because land cover classes start at 1
-    #     landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
-    #     landcover_encoding = self.one_hot_matrix[landcover_classes_flattened].reshape(
-    #         new_shape).permute(0, 3, 1, 2)
-    #     x = torch.concatenate(
-    #         [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
-
-    #     return x, y
-
-
-
-
     def preprocess_and_augment(self, x, y):
+        """_summary_ Preprocesses and augments the input data. 
+        This includes: 
+        1. Slight preprocessing of active fire features, if loading from TIF files.
+        2. Geometric data augmentation.
+        3. Applying sin to degree features, to ensure that the extreme degree values are close in feature space.
+        4. Standardization of features. 
+        5. Addition of the binary active fire mask, as an addition to the fire mask that indicates the time of detection. 
+        6. One-hot encoding of land cover classes.
+
+        Args:
+            x (_type_): _description_ Input data, of shape (time_steps, features, height, width)
+            y (_type_): _description_ Target data, next day's binary active fire mask, of shape (height, width)
+
+        Returns:
+            _type_: _description_
+        """
+
         x, y = torch.Tensor(x), torch.Tensor(y)
 
+        # Preprocessing that has been done in HDF files already
         if not self.load_from_hdf5:
+
+            # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
+            # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
+            # them with 0 instead.
             x[:, -1, ...] = torch.nan_to_num(x[:, -1, ...], nan=0)
             y = torch.nan_to_num(y, nan=0.0)
+
+            # Turn active fire detection time from hhmm to hh.
             x[:, -1, ...] = torch.floor_divide(x[:, -1, ...], 100)
 
         y = (y > 0).long()
 
-        # --- Bring in precomputed burn_streak (already global, window-sliced) ---
-        burn_streak = None
-        if hasattr(self, "_precomputed_burn_streak") and self._precomputed_burn_streak is not None:
-            burn_streak = torch.from_numpy(self._precomputed_burn_streak.astype(np.int32)).float()
-            self._precomputed_burn_streak = None
-            # Append burn_streak temporarily so it is transformed along with x
-            x = torch.cat([x, burn_streak], dim=1)
-
-        # --- Apply augment/crop/pad to x (burn_streak rides inside x) ---
+        # Augmentation has to come before normalization, because we have to correct the angle features when we change
+        # the orientation of the image.
         if self.is_train:
             x, y = self.augment(x, y)
         else:
             x, y = self.center_crop_x32(x, y)
-            if self.is_pad:
-                x, y = self.zero_pad_to_size(x, y)
-
-        # --- Split burn_streak back out if it exists ---
-        if burn_streak is not None:
-            burn_streak = x[:, -1:, ...]
-            x = x[:, :-1, ...]   # remove from main x
-
-        # --- Angle features sin transform ---
+        
+        # If using a model that expects images of larger size, use zero-padding 
+        if self.is_pad:
+            x, y = self.zero_pad_to_size(x, y)
+        
+        # Some features take values in [0,360] degrees. By applying sin, we make sure that values near 0 and 360 are
+        # close in feature space, since they are also close in reality.
         x[:, self.indices_of_degree_features, ...] = torch.sin(
             torch.deg2rad(x[:, self.indices_of_degree_features, ...]))
 
-        # --- Binary mask (from AF band) ---
+        # Compute binary mask of active fire pixels before normalization changes what 0 means. 
         binary_af_mask = (x[:, -1:, ...] > 0).float()
 
-        # --- Normalize only continuous features ---
         x = self.standardize_features(x)
 
-        # --- Final concatenate ---
-        if burn_streak is not None:
-            x = torch.cat([x, burn_streak, binary_af_mask], dim=1)
-        else:
-            x = torch.cat([x, binary_af_mask], dim=1)
+        # Adds the binary fire mask as an additional channel to the input data.
+        x = torch.cat([x, binary_af_mask], axis=1)
 
+        # Replace NaN values with 0, thereby essentially setting them to the mean of the respective feature.
         x = torch.nan_to_num(x, nan=0.0)
 
-        # --- Land cover one-hot ---
-        new_shape = (x.shape[0], x.shape[2], x.shape[3], self.one_hot_matrix.shape[0])
+        # Create land cover class one-hot encoding, put it where the land cover integer was
+        new_shape = (x.shape[0], x.shape[2], x.shape[3],
+                     self.one_hot_matrix.shape[0])
+        # -1 because land cover classes start at 1
         landcover_classes_flattened = x[:, 16, ...].long().flatten() - 1
         landcover_encoding = self.one_hot_matrix[landcover_classes_flattened].reshape(
             new_shape).permute(0, 3, 1, 2)
-        x = torch.concatenate([x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
+        x = torch.concatenate(
+            [x[:, :16, ...], landcover_encoding, x[:, 17:, ...]], dim=1)
 
         return x, y
 
-
-    def augment(self, x, y, extras=None):
+    def augment(self, x, y):
         """_summary_ Applies geometric transformations: 
           1. random square cropping, preferring images with a) fire pixels in the output and b) (with much less weight) fire pixels in the input
           2. rotate by multiples of 90°
@@ -539,72 +484,34 @@ class FireSpreadDataset(Dataset):
 
         x, y = best_crop
 
-        # hflip = bool(np.random.random() > 0.5)
-        # vflip = bool(np.random.random() > 0.5)
-        # rotate = int(np.floor(np.random.random() * 4))
-        # if hflip:
-        #     x = TF.hflip(x)
-        #     y = TF.hflip(y)
-        #     # Adjust angles
-        #     x[:, self.indices_of_degree_features, ...] = 360 - \
-        #         x[:, self.indices_of_degree_features, ...]
-
-        # if vflip:
-        #     x = TF.vflip(x)
-        #     y = TF.vflip(y)
-        #     # Adjust angles
-        #     x[:, self.indices_of_degree_features, ...] = (
-        #         180 - x[:, self.indices_of_degree_features, ...]) % 360
-
-        # if rotate != 0:
-        #     angle = rotate * 90
-        #     x = TF.rotate(x, angle)
-        #     y = torch.unsqueeze(y, 0)
-        #     y = TF.rotate(y, angle)
-        #     y = torch.squeeze(y, 0)
-
-        #     # Adjust angles
-        #     x[:, self.indices_of_degree_features, ...] = (x[:, self.indices_of_degree_features,
-        #                                                   ...] - 90 * rotate) % 360
-        # return x, y
-
-        # sameep added new augment data!
-        """
-        Apply the same geometric transforms to x, y, and any extras (e.g., burn_streak)
-        x: (T, C, H, W) torch.Tensor
-        y: (H, W) torch.Tensor
-        extras: list of tensors each shaped like (T, 1, H, W) or (T, Cx, H, W)
-        """
         hflip = bool(np.random.random() > 0.5)
         vflip = bool(np.random.random() > 0.5)
         rotate = int(np.floor(np.random.random() * 4))
-
         if hflip:
             x = TF.hflip(x)
             y = TF.hflip(y)
-            if extras is not None:
-                extras = [TF.hflip(t) for t in extras]
-            # Adjust angles for degree features (keep your existing line)
-            x[:, self.indices_of_degree_features, ...] = 360 - x[:, self.indices_of_degree_features, ...]
+            # Adjust angles
+            x[:, self.indices_of_degree_features, ...] = 360 - \
+                x[:, self.indices_of_degree_features, ...]
 
         if vflip:
             x = TF.vflip(x)
             y = TF.vflip(y)
-            if extras is not None:
-                extras = [TF.vflip(t) for t in extras]
-            # Adjust angles for degree features (keep your existing line)
-            x[:, self.indices_of_degree_features, ...] = (180 - x[:, self.indices_of_degree_features, ...]) % 360
+            # Adjust angles
+            x[:, self.indices_of_degree_features, ...] = (
+                180 - x[:, self.indices_of_degree_features, ...]) % 360
 
         if rotate != 0:
             angle = rotate * 90
             x = TF.rotate(x, angle)
-            y_ = torch.unsqueeze(y, 0)
-            y_ = TF.rotate(y_, angle)
-            y = torch.squeeze(y_, 0)
-            if extras is not None:
-                extras = [TF.rotate(t, angle) for t in extras]
+            y = torch.unsqueeze(y, 0)
+            y = TF.rotate(y, angle)
+            y = torch.squeeze(y, 0)
 
-        return (x, y, extras) if extras is not None else (x, y)
+            # Adjust angles
+            x[:, self.indices_of_degree_features, ...] = (x[:, self.indices_of_degree_features,
+                                                          ...] - 90 * rotate) % 360
+        return x, y
 
     def center_crop_x32(self, x, y):
         """_summary_ Crops the center of the image to side lengths that are a multiple of 32, 
@@ -671,32 +578,8 @@ class FireSpreadDataset(Dataset):
             _type_: _description_ Tuple of lists of integers, first list contains static feature indices, second list contains dynamic feature indices.
         """
         static_feature_ids = [12,13,14] + list(range(16,33))
-        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,42))
+        dynamic_feature_ids = list(range(12)) + [15] + list(range(33,40))
         return static_feature_ids, dynamic_feature_ids
-    
-
-    @staticmethod
-    def compute_burn_streak_np(binary_mask_full: np.ndarray) -> np.ndarray:
-        """
-        Compute consecutive burn-day counts per pixel across the FULL timeline.
-
-        Args:
-            binary_mask_full: (T, 1, H, W) np.float32, 0/1 for all days up to the label
-
-        Returns:
-            (T, 1, H, W) np.uint16 with counts (1,2,3,...), resets to 0 after gaps
-        """
-        T = binary_mask_full.shape[0]
-        streak = np.zeros_like(binary_mask_full, dtype=np.int32)   # <- use int32 instead of uint16
-
-        for t in range(T):
-            if t == 0:
-                streak[0] = (binary_mask_full[0] > 0).astype(np.int32)
-            else:
-                burning = (binary_mask_full[t] > 0)
-                streak[t] = np.where(burning, streak[t-1] + 1, 0).astype(np.uint16)
-        return streak
-
 
     @staticmethod
     def get_static_and_dynamic_features_to_keep(features_to_keep:Optional[List[int]]):
@@ -792,53 +675,75 @@ class FireSpreadDataset(Dataset):
                 21: 'forecast specific humidity',
                 22: 'active fire'}
 
+    # def get_generator_for_hdf5(self):
+    #     """_summary_ Creates a generator that is used to turn the dataset into HDF5 files. It applies a few 
+    #     preprocessing steps to the active fire features that need to be applied anyway, to save some computation.
+
+    #     Yields:
+    #         _type_: _description_ Generator that yields tuples of (year, fire_name, img_dates, lnglat, img_array) 
+    #         where img_array contains all images available for the respective fire, preprocessed such 
+    #         that active fire detection times are converted to hours. lnglat contains longitude and latitude
+    #         of the center of the image.
+    #     """
+
+    #     for year, fires_in_year in self.imgs_per_fire.items():
+    #         for fire_name, img_files in fires_in_year.items():
+    #             imgs = []
+    #             lnglat = None
+    #             for img_path in img_files:
+    #                 with rasterio.open(img_path, 'r') as ds:
+    #                     imgs.append(ds.read())
+    #                     if lnglat is None:
+    #                         lnglat = ds.lnglat()
+    #             x = np.stack(imgs, axis=0)
+
+    #             # Get dates from filenames
+    #             img_dates = [img_path.split("/")[-1].split("_")[0].replace(".tif", "")
+    #                          for img_path in img_files]
+
+    #             # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
+    #             # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
+    #             # them with 0 instead.
+    #             x[:, -1, ...] = np.nan_to_num(x[:, -1, ...], nan=0)
+
+    #             # Turn active fire detection time from hhmm to hh.
+    #             x[:, -1, ...] = np.floor_divide(x[:, -1, ...], 100)
+    #             yield year, fire_name, img_dates, lnglat, x
+
+                
+
     def get_generator_for_hdf5(self):
-        """_summary_ Creates a generator that is used to turn the dataset into HDF5 files. It applies a few 
-        preprocessing steps to the active fire features that need to be applied anyway, to save some computation.
+            """
+            Creates a generator that is used to turn the dataset into HDF5 files. 
+            This version is updated to handle both 18- and 23-band GeoTIFFs.
+            """
+            for year, fires_in_year in self.imgs_per_fire.items():
+                for fire_name, img_files in fires_in_year.items():
+                    imgs = []
+                    lnglat = None
+                    for img_path in img_files:
+                        with rasterio.open(img_path, 'r') as ds:
+                            # --- THIS IS THE FIX ---
+                            # Instead of just ds.read(), we use our harmonizing function.
+                            harmonized_img_data = self._read_and_harmonize_bands(ds)
+                            imgs.append(harmonized_img_data)
+                            # --- END OF FIX ---
+                            if lnglat is None:
+                                lnglat = ds.lnglat()
+                    
+                    # This check prevents a crash if a fire folder was empty or all images were invalid.
+                    if not imgs:
+                        warnings.warn(f"Skipping fire {fire_name} in year {year} as it contains no valid images.", RuntimeWarning)
+                        continue
 
-        Yields:
-            _type_: _description_ Generator that yields tuples of (year, fire_name, img_dates, lnglat, img_array) 
-            where img_array contains all images available for the respective fire, preprocessed such 
-            that active fire detection times are converted to hours. lnglat contains longitude and latitude
-            of the center of the image.
-        """
+                    x = np.stack(imgs, axis=0)
 
-        for year, fires_in_year in self.imgs_per_fire.items():
-            for fire_name, img_files in fires_in_year.items():
-                imgs = []
-                lnglat = None
-                for img_path in img_files:
-                    with rasterio.open(img_path, 'r') as ds:
-                        imgs.append(ds.read())
-                        if lnglat is None:
-                            lnglat = ds.lnglat()
-                x = np.stack(imgs, axis=0)
+                    # Get dates from filenames
+                    img_dates = [img_path.split("/")[-1].split("_")[0].replace(".tif", "")
+                                for img_path in img_files]
 
-                # Get dates from filenames
-                img_dates = [img_path.split("/")[-1].split("_")[0].replace(".tif", "")
-                             for img_path in img_files]
-
-                # Active fire masks have nans where no detections occur. In general, we want to replace NaNs with
-                # the mean of the respective feature. Since the NaNs here don't represent missing values, we replace
-                # them with 0 instead.
-                x[:, -1, ...] = np.nan_to_num(x[:, -1, ...], nan=0)
-
-                # Turn active fire detection time from hhmm to hh.
-                # previous code to convert active fire to hour now its already in hours
-
-                # x[:, -1, ...] = np.floor_divide(x[:, -1, ...], 100)
-
-                # Active fire band (last channel)
-                af = x[:, -1, ...]
-
-                # Replace NaNs with 0 (ok to keep)
-                af = np.nan_to_num(af, nan=0.0)
-
-                # Only convert hhmm -> hh if values look like hhmm (i.e., > 100 somewhere)
-                if np.nanmax(af) > 100:
-                    af = np.floor_divide(af, 100)  # e.g., 1330 -> 13
-                # else: already in hours (0–24), do nothing
-
-                x[:, -1, ...] = af
-
-                yield year, fire_name, img_dates, lnglat, x
+                    # Preprocessing steps remain the same
+                    x[:, -1, ...] = np.nan_to_num(x[:, -1, ...], nan=0)
+                    x[:, -1, ...] = np.floor_divide(x[:, -1, ...], 100)
+                    
+                    yield year, fire_name, img_dates, lnglat, x
