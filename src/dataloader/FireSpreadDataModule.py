@@ -218,17 +218,13 @@ class FireSpreadDataModule(LightningDataModule):
             # with the new years (2012-2015) added to every training set.
             # The order is: [ 8 Training Years | 2 Validation Years | 2 Test Years ]
             folds = [
-                # Fold 1: Train on (12-15, 16-17, 20-21), Val on (18-19), Test on (22-23)
                 (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
                 
-                # Fold 2: Train on (12-15, 16-17, 22-23), Val on (20-21), Test on (18-19)
-                (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2020, 2021, 2018, 2019),
-                
-                # Fold 3: Train on (12-15, 18-19, 22-23), Val on (20-21), Test on (16-17)
                 (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
                 
-                # Fold 4: Train on (12-15, 20-21, 22-23), Val on (16-17), Test on (18-19)
-                (2012, 2013, 2014, 2015, 2020, 2021, 2022, 2023, 2016, 2017, 2018, 2019)
+                (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2022, 2023, 2018, 2019),
+                
+                (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
             ]
             
             # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
