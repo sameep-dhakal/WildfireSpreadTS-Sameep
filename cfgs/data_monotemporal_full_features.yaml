@@ -1,4 +1,4 @@
-data_dir: /develop/data/WSTS-plusplus/
+data_dir: /develop/data/WildfireSpreadTS_2012_2015_hdf5/
 batch_size: 64
 n_leading_observations: 1
 crop_side_length: 128
