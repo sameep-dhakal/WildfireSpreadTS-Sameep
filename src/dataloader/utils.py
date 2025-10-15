@@ -16,7 +16,7 @@ def get_means_stds_missing_values(training_years: List[int]):
     Returns:
         _type_: _description_
     """
-    if 2016 in training_years:
+    if 2012 in training_years:
         print("Using means for Jake Data")
         stats_per_training_year_combo = {
         (2012): {
@@ -2288,6 +2288,7 @@ def get_means_stds_missing_values(training_years: List[int]):
             dtype=np.float32
         )
     },
+
     (2012, 2013, 2014, 2015, 2020, 2021, 2022, 2023): {
         'means': np.array(
             [           2021.062875934896,
