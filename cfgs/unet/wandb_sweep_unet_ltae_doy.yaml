@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unetltae-5days-wstsonlyastestandval
+project:  wildfire-prediction-unetltae-5days-wstsplusplus-vegfeatures
 command:
   - ${env}
   - python
