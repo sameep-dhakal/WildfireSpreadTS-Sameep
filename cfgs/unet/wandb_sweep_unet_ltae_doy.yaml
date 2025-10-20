@@ -1,4 +1,4 @@
-project:  wildfire-prediction-unetltae-1days-wstsplusplus-vegfeatures
+project:  wildfire-prediction-utae-difloss
 command:
   - ${env}
   - python
@@ -19,6 +19,13 @@ parameters:
     value: models.SMPTempModel
   model.use_doy:
     value: false
+  model.init_args.loss_function:
+    values:
+      - BCE
+      - Focal
+      - Dice
+      - Jaccard
+      - Lovasz
   # Chosen to have each year as the test set once
   data.data_fold_id:
     values:
