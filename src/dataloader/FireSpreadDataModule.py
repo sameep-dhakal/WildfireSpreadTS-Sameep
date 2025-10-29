@@ -227,37 +227,37 @@ class FireSpreadDataModule(LightningDataModule):
             #     (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
             # ]
 
-            folds = [
-                ( 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
+            # folds = [
+            #     ( 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
 
-                ( 2016, 2017, 2020, 2021, 2022, 2023, 2018, 2019),
+            #     ( 2016, 2017, 2020, 2021, 2022, 2023, 2018, 2019),
                 
-                ( 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
+            #     ( 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
                 
-                ( 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
-            ]
+            #     ( 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
+            # ]
 
             # 4 folds cross validation on WSTS and all other data as train set
 
-            # folds = [
-            #     (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2018, 2020, 2019, 2021),
+            folds = [
+                (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2018, 2020, 2019, 2021),
 
-            #     (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2018, 2020, 2021, 2019),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2018, 2020, 2021, 2019),
 
-            #     (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2019, 2021, 2018, 2020),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2019, 2021, 2018, 2020),
 
-            #     (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2019, 2021, 2020, 2018),
-            # ]
+                (2012, 2013, 2014, 2015, 2016, 2017, 2022, 2023, 2019, 2021, 2020, 2018),
+            ]
             
-            # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
-            train_years = list(folds[data_fold_id][:4])
-            val_years   = list(folds[data_fold_id][4:6])
-            test_years  = list(folds[data_fold_id][6:8])
+            # # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
+            # train_years = list(folds[data_fold_id][:4])
+            # val_years   = list(folds[data_fold_id][4:6])
+            # test_years  = list(folds[data_fold_id][6:8])
 
-            #     # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
-            # train_years = list(folds[data_fold_id][:10])
-            # val_years   = list(folds[data_fold_id][10:11])
-            # test_years  = list(folds[data_fold_id][11:12])
+                # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
+            train_years = list(folds[data_fold_id][:8])
+            val_years   = list(folds[data_fold_id][8:10])
+            test_years  = list(folds[data_fold_id][10:12])
 
         print(
             f"Using the following dataset split:\nTrain years: {train_years}, Val years: {val_years}, Test years: {test_years}")
