@@ -3,6 +3,10 @@ import torch.nn as nn
 from transformers import SegformerModel, SegformerConfig
 from models.BaseModel import BaseModel
 
+import os
+os.environ["DISABLE_FLASH_ATTENTION"] = "1"
+
+
 
 class SegFormerModel(BaseModel):
     """
