@@ -1,6 +1,7 @@
 project: wildfire-prediction-segformer
 command: 
   - ${env}
+  - DISABLE_FLASH_ATTENTION=1
   - python
   - ${program}
   - -c
