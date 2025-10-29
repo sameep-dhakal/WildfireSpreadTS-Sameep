@@ -4,7 +4,7 @@ optimizer:
   init_args:
     lr: 0.001
 model:
-  class_path: models.SegFormerModel
+  class_path: /develop/code/WildfireSpreadTS-Sameep/src/models/SegFormerModel.py
   init_args:
     model_name: "nvidia/segformer-b0-finetuned-ade-512-512"   # ✅ official pretrained SegFormer backbone
     n_channels: 8
