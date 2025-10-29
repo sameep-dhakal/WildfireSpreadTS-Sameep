@@ -1,4 +1,4 @@
-project: wildfire-prediction-utae-difftrainingsteps
+project: wildfire-prediction-utae-25000trainingsteps
 command:
   - ${env}
   - python
