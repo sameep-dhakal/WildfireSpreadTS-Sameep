@@ -4,7 +4,7 @@ command:
   - python
   - ${program}
   - -c
-  - cfgs/unet/segformer_monotemporal.yaml
+  - cfgs/SegFormer/segformer_monotemporal.yaml
   - --trainer
   - cfgs/trainer_single_gpu.yaml
   - --data
