@@ -1,4 +1,4 @@
-project: wildfire-prediction-utae-25000trainingsteps
+project: wildfire-prediction-unet-resent50
 command:
   - ${env}
   - python
@@ -16,7 +16,7 @@ metric:
   name: test_AP
 parameters:
   model.class_path:
-    value: models.SMPTempModel
+    value: models.SMPModel
   model.use_doy:
     value: false
   # model.init_args.loss_function:
@@ -40,15 +40,16 @@ parameters:
       # - None 
   data.n_leading_observations:
     values:
+      - 1
       - 5
   data.remove_duplicate_features:
-    value: false     #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
+    value: true     #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
     value: true
   data.return_doy:
     value: false
   trainer.max_steps: 
-    value: 25000
+    value: 10000
       # - 20000
       # - 30000
   do_test:
