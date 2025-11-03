@@ -28,10 +28,10 @@ optimizer:
 model:
   class_path: models.SMPModel
   init_args:
-    encoder_name: resnet50
+    encoder_name: resnet18
     encoder_weights: imagenet # Use pretrained weights from Imagenet
     n_channels: 8
-    flatten_temporal_dimension: true
+    flatten_temporal_dimension: false
     pos_class_weight: 236 # (relative frequency in augmented 2018 and 2020 fires)^-1
     loss_function: Focal
     #alpha_focal: 0.1
