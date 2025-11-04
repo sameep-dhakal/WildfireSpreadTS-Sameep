@@ -32,8 +32,11 @@ parameters:
       - 5
   data.remove_duplicate_features:
     value: true
+  data.additional_data:
+    value: true  
   do_test:
     value: true
   trainer.max_steps:
     value: 10000
 program: src/train.py
+
