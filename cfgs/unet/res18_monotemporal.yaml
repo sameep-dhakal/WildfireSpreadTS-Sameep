@@ -28,7 +28,7 @@ optimizer:
 model:
   class_path: models.SMPModel
   init_args:
-    encoder_name: resnet18
+    encoder_name: resnet50
     encoder_weights: imagenet # Use pretrained weights from Imagenet
     n_channels: 8
     flatten_temporal_dimension: false
