@@ -5,5 +5,4 @@ from .SMPModel import SMPModel
 from .UTAELightning import UTAELightning
 from .SMPTempModel import SMPTempModel 
 from .SwinUnetTempLightning import SwinUnetTempLightning
-from .DomainAdaptationModel import DomainAdaptationSMPModel
 from .SwinUnetLightning import SwinUnetLightning
