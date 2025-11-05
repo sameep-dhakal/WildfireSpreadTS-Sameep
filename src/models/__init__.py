@@ -4,5 +4,6 @@ from .LogisticRegression import LogisticRegression
 from .SMPModel import SMPModel
 from .UTAELightning import UTAELightning
 from .SMPTempModel import SMPTempModel 
+from .DomainUnetModel import DomainUnetModel
 from .SwinUnetTempLightning import SwinUnetTempLightning
 from .SwinUnetLightning import SwinUnetLightning
