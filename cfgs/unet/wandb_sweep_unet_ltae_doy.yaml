@@ -1,4 +1,4 @@
-project: wildfire-prediction-utae-resnet50-noflatten
+project: wildfire-domainadaptation-unet
 command:
   - ${env}
   - python
