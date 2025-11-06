@@ -28,7 +28,7 @@ parameters:
       # - None 
   data.n_leading_observations:
     values:
-      - 1
+      # - 1
       - 5
   data.remove_duplicate_features:
     value: true
