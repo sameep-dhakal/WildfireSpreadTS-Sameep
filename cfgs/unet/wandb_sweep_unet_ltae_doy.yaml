@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-unet
+project: wildfire-domainadaptation-unet-lambda-schedule
 command:
   - ${env}
   - python

@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch
 import segmentation_models_pytorch as smp
 from .BaseModel import BaseModel
+import math
+
 
 
 # ----------------------------------------
@@ -60,7 +62,7 @@ class DomainUnetModel(BaseModel):
         required_img_size=None,
         alpha_focal=None,
         f1_threshold=None,
-        lambda_grl: float = 1.0,  
+        lambda_grl: float = 0.0,  
         **kwargs: Any
     ):
         super().__init__(
@@ -197,8 +199,14 @@ class DomainUnetModel(BaseModel):
         # Concatenate source + target features
         f_all = torch.cat([f_s, f_t], dim=0)
 
-        # Apply Gradient Reversal
-        f_rev = GradientReversal.apply(f_all, self.lambda_grl)
+        # --------------------------------------------------
+        # Compute progressive lambda (DANN schedule)
+        # --------------------------------------------------
+        progress = self.global_step / max(1, self.trainer.estimated_stepping_batches)
+        lambda_grl = 2 / (1 + math.exp(-10 * progress)) - 1
+
+        # Apply Gradient Reversal with scheduled lambda
+        f_rev = GradientReversal.apply(f_all, lambda_grl)
 
         # Domain classification (2-way softmax)
         domain_logits = self.domain_classifier(f_rev)
@@ -214,11 +222,24 @@ class DomainUnetModel(BaseModel):
         # -------------------------------------------
         # 5️⃣ Combine losses
         # -------------------------------------------
-        total_loss = seg_loss + self.lambda_grl * domain_loss
+        total_loss = seg_loss + lambda_grl * domain_loss
+
 
         self.log("train_seg_loss", seg_loss, on_step=True, on_epoch=True)
         self.log("train_domain_loss", domain_loss, on_step=True, on_epoch=True)
         self.log("train_total_loss", total_loss, on_step=True, on_epoch=True)
+
+        # Domain classification accuracy
+        with torch.no_grad():
+            preds = torch.argmax(domain_logits, dim=1)
+            domain_acc = (preds == domain_labels).float().mean()
+
+        # Log for debugging/monitoring
+        self.log("lambda_grl", lambda_grl, on_step=True, prog_bar=True)
+        self.log("train_domain_acc", domain_acc, on_step=True, on_epoch=True)
+
+        if batch_idx % 10 == 0:
+            print(f"   λ={lambda_grl:.3f}, domain_acc={domain_acc:.3f}")
 
         # -------------------------------------------
         # 6️⃣ Debug info
