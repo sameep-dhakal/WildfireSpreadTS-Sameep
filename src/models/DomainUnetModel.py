@@ -110,8 +110,8 @@ class DomainUnetModel(BaseModel):
         Here we create an infinite iterator over the target domain (test dataloader).
         """
         dm = self.trainer.datamodule
-        self.target_iter = cycle(dm.test_dataloader())
-        print("✅ Target iterator initialized from test_dataloader()")
+        self.target_iter = cycle(dm.target_dataloader())
+        print("✅ Target iterator initialized from target_dataloader()")
 
         # Optional sanity check (first batch shape)
         x_t, _ = next(self.target_iter)
