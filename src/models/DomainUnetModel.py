@@ -17,7 +17,7 @@ class GradientReversal(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output.neg() * -ctx.lambda_grl, None
+        return grad_output.neg() * ctx.lambda_grl, None
     
 
 class DomainClassifier(nn.Module):
