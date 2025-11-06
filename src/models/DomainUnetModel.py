@@ -148,7 +148,7 @@ class DomainUnetModel(BaseModel):
             # For target domain: return only encoder features
             return encoder_output
         # --- 2️⃣ Decoder + segmentation head ---
-        decoder_output = self.model.decoder(features)   # ✅ FIXED LINE
+        decoder_output = self.model.decoder(*features)   # ✅ FIXED LINE
         mask = self.model.segmentation_head(decoder_output)
 
         in_training = hasattr(self, "trainer") and self.trainer.training
