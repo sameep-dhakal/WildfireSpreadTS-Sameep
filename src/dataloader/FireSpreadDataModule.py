@@ -249,7 +249,7 @@ class FireSpreadDataModule(LightningDataModule):
 
                 # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
             train_years = list(folds[data_fold_id][:8])
-            val_years   = list(folds[data_fold_id][10:12])
+            val_years   = list(folds[data_fold_id][8:10])
             test_years  = list(folds[data_fold_id][10:12])
 
         print(
