@@ -106,18 +106,23 @@ class DomainUnetModel(BaseModel):
     # ----------------------------------------------------------
     # Lightning hook: called once when training starts
     # ----------------------------------------------------------
-    def on_train_start(self):
-        """
-        Called automatically by PyTorch Lightning before the first training step.
-        Here we create an infinite iterator over the target domain (test dataloader).
-        """
-        dm = self.trainer.datamodule
-        self.target_iter = cycle(dm.target_dataloader())
-        print("✅ Target iterator initialized from target_dataloader()")
+    # def on_train_start(self):
+    #     """
+    #     Called automatically by PyTorch Lightning before the first training step.
+    #     Here we create an infinite iterator over the target domain (test dataloader).
+    #     """
+    #     dm = self.trainer.datamodule
+    #     self.target_iter = cycle(dm.target_dataloader())
+    #     print("✅ Target iterator initialized from target_dataloader()")
 
-        # Optional sanity check (first batch shape)
-        x_t, _ = next(self.target_iter)
-        print(f"🔍 Sample target batch shape: {tuple(x_t.shape)}")
+    #     # Optional sanity check (first batch shape)
+    #     x_t, _ = next(self.target_iter)
+    #     print(f"🔍 Sample target batch shape: {tuple(x_t.shape)}")
+
+    def on_train_start(self):
+        """Delay target dataloader loading until first training batch."""
+        self.target_iter = None  # 🚨 Do not load here
+        print("🕓 Target iterator will be created lazily on first training batch.")
 
     # ----------------------------------------------------------
     # Forward pass
@@ -169,6 +174,12 @@ class DomainUnetModel(BaseModel):
         Source: supervised segmentation loss.
         Target: encoder-only forward for domain adaptation.
         """
+
+        # Lazily initialize target iterator (only first time)
+        if self.target_iter is None:
+            dm = self.trainer.datamodule
+            self.target_iter = cycle(dm.target_dataloader())
+            print("✅ Target iterator initialized from target_dataloader() (lazy mode)")
 
         # -------------------------------------------
         # 1️⃣ Segmentation loss (source only)
