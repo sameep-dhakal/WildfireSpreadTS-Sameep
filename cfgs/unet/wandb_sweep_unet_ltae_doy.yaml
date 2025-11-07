@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-unet-sanity
+project: wildfire-domainadaptation-importanceweight-only
 command:
   - ${env}
   - python
