@@ -34,24 +34,27 @@ class DomainLogitHead(nn.Module):
 #  STAGE 2: DOMAIN WEIGHT ESTIMATOR (IWAN)
 # ------------------------------------------------------------
 class IWANStage2_WeightEstimator(BaseModel):
-    """
-    Stage 2 of IWAN (Zhang et al., CVPR 2018)
-    -----------------------------------------
-    - Fs (source encoder) is frozen from Stage 1.
-    - D learns to discriminate source vs target features.
-    - Validation loss is used for robust checkpointing.
-    """
-
-    def __init__(self, ckpt_dir: str, encoder_name="resnet18", n_channels=7, **kwargs):
+    def __init__(
+        self,
+        ckpt_dir: str,                   # 👈 must exist explicitly here
+        encoder_name: str = "resnet18",
+        n_channels: int = 7,
+        **kwargs
+    ):
         super().__init__(n_channels=n_channels, **kwargs)
         self.save_hyperparameters()
 
-        # -------------------------
-        # Load pretrained source encoder Fs
-        # -------------------------
+        if not os.path.isdir(ckpt_dir):
+            alt_dir = ckpt_dir.replace("/mnt/", "/develop/", 1)
+            if os.path.isdir(alt_dir):
+                print(f"🔁 Remapped ckpt_dir → {alt_dir}")
+                ckpt_dir = alt_dir
+            else:
+                raise FileNotFoundError(f"❌ ckpt_dir not found: {ckpt_dir}")
+
         ckpt_files = [f for f in os.listdir(ckpt_dir) if f.endswith(".ckpt")]
         if not ckpt_files:
-            raise FileNotFoundError(f"No .ckpt file found in {ckpt_dir}")
+            raise FileNotFoundError(f"❌ No .ckpt file in {ckpt_dir}")
         ckpt_path = os.path.join(ckpt_dir, ckpt_files[0])
         print(f"✅ Loading frozen encoder from: {ckpt_path}")
 
@@ -61,24 +64,22 @@ class IWANStage2_WeightEstimator(BaseModel):
             in_channels=n_channels,
             classes=1,
         )
+
         ckpt = torch.load(ckpt_path, map_location="cpu")
-        state_dict = ckpt.get("state_dict", ckpt)
+        sd = ckpt.get("state_dict", ckpt)
         base_model.load_state_dict(
-            {k.replace("model.", ""): v for k, v in state_dict.items() if "model." in k},
+            {k.replace("model.", ""): v for k, v in sd.items() if "model." in k},
             strict=False,
         )
 
-        # Freeze encoder weights
         self.Fs = base_model.encoder.eval()
         for p in self.Fs.parameters():
             p.requires_grad_(False)
 
-        # Domain discriminator D
         self.D = DomainLogitHead(self.Fs.out_channels[-1])
         self.bce = nn.BCEWithLogitsLoss()
-
-        # Lazy iterator for target domain
         self.target_iter = None
+
 
     # ------------------------------------------------------------
     # HELPER: Forward through frozen encoder + domain head
