@@ -1,7 +1,7 @@
 # Stage 1 – Source classifier / segmenter (Fs + C)
 from typing import Any
 import segmentation_models_pytorch as smp
-from .BaseModel import BaseModel
+from ..BaseModel import BaseModel
 
 
 class IWANStage1_Pretrain(BaseModel):

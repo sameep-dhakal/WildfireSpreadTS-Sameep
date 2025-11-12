@@ -1,7 +1,7 @@
 import os, copy, torch
 import torch.nn as nn, torch.nn.functional as F
 import segmentation_models_pytorch as smp
-from .BaseModel import BaseModel
+from ..BaseModel import BaseModel
 
 
 class GRL(torch.autograd.Function):
