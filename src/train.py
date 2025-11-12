@@ -18,9 +18,9 @@ torch.set_float32_matmul_precision("high")
 # =========================================================
 CHECKPOINT_MAP = {
     0: "/develop/results/wildfire_progression/tc8waap3/checkpoints",
-    1: "/develop/results/wildfire_progression/3nzyri6y/checkpoints",
-    2: "/develop/results/wildfire_progression/62pksv24/checkpoints",
-    3: "/develop/results/wildfire_progression/279u1p7u/checkpoints",
+    1: "/develop/results/wildfire_progression/gemkrqiy/checkpoints",
+    2: "/develop/results/wildfire_progression/gfosobi8/checkpoints",
+    3: "/develop/results/wildfire_progression/cc5bgta/checkpoints",
 }
 
 OUTPUT_ROOT = "/develop/results"
