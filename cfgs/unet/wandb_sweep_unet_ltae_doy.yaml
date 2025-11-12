@@ -10,56 +10,42 @@ command:
   - --data
   - cfgs/data_monotemporal_full_features.yaml
   - ${args}
-
 method: grid
 metric:
   goal: minimize
-  name: val_loss_D
-
+  name: val_loss_D # Minimize the domain discriminator loss during weight estimation
 parameters:
   model.class_path:
     value: models.DomainAdpatation.IWANStage2_WeightEstimator.IWANStage2_WeightEstimator
   model.use_doy:
     value: false
+
+  data.data_fold_id:
+    values:
+      - 0
+      - 1
+      - 2
+      - 3
   data.features_to_keep:
-    value: [0, 1, 2, 3, 4, 38, 39]
+    values:
+      - [0, 1, 2, 3, 4, 38, 39]
+      # - [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 38, 39]
+      # - None 
   data.n_leading_observations:
-    value: 1
+    values:
+      - 1
+      # - 5
   data.remove_duplicate_features:
-    value: true
+    value: true    #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
     value: true
   data.return_doy:
     value: false
-  trainer.max_steps:
+  trainer.max_steps: 
     value: 10000
+      # - 20000
+      # - 30000
   do_test:
     value: true
-
-# 👇 Explicit 1-to-1 fold mapping
-runs:
-  - name: fold0
-    parameters:
-      data.data_fold_id: 0
-      model.init_args.ckpt_dir: /develop/results/wildfire_progression/tc8waap3/checkpoints
-      trainer.default_root_dir: /develop/results/stage2_fold0
-
-  - name: fold1
-    parameters:
-      data.data_fold_id: 1
-      model.init_args.ckpt_dir: /develop/results/wildfire_progression/3nzyri6y/checkpoints
-      trainer.default_root_dir: /develop/results/stage2_fold1
-
-  - name: fold2
-    parameters:
-      data.data_fold_id: 2
-      model.init_args.ckpt_dir: /develop/results/wildfire_progression/62pksv24/checkpoints
-      trainer.default_root_dir: /develop/results/stage2_fold2
-
-  - name: fold3
-    parameters:
-      data.data_fold_id: 3
-      model.init_args.ckpt_dir: /develop/results/wildfire_progression/279u1p7u/checkpoints
-      trainer.default_root_dir: /develop/results/stage2_fold3
-
 program: src/train.py
+
