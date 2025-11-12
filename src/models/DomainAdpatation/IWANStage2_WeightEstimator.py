@@ -36,7 +36,7 @@ class DomainLogitHead(nn.Module):
 class IWANStage2_WeightEstimator(BaseModel):
     def __init__(
         self,
-        ckpt_dir: str,                   # 👈 must exist explicitly here
+        ckpt_dir: str = None,                   # 👈 must exist explicitly here
         encoder_name: str = "resnet18",
         n_channels: int = 7,
         **kwargs
