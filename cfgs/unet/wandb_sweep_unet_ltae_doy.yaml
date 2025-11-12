@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-importanceweight-only
+project: wildfire-domainadaptation-stage2-res50
 command:
   - ${env}
   - python
@@ -6,27 +6,29 @@ command:
   - -c
   - cfgs/unet/res18_monotemporal.yaml
   - --trainer
-  - cfgs/trainer_single_gpu.yaml
+  - cfgs/trainer_domain_adaptation_stage2.yaml
   - --data
   - cfgs/data_monotemporal_full_features.yaml
   - ${args}
 method: grid
 metric:
-  goal: maximize
-  name: test_AP
+  goal: minimize
+  name: val_loss_D # Minimize the domain discriminator loss during weight estimation
 parameters:
   model.class_path:
-    value: models.DomainUnetModel
+    value: models.DomainAdpatation.IWANStage2_WeightEstimator.IWANStage2_WeightEstimator
   model.use_doy:
     value: false
-  # model.init_args.loss_function:
-  #   values:
-  #     - BCE
-  #     # - Focal
-  #     - Dice
-  #     - Jaccard
-  #     - Lovasz
-  # Chosen to have each year as the test set once
+
+  # Stage 1 checkpoint directories (already trained)
+  model.init_args.ckpt_dir:
+    values:
+      - /mnt/results/wildfire_progression/tc8waap3/checkpoints     # fold 0
+      - /mnt/results/wildfire_progression/gemkrqiy/checkpoints     # fold 1
+      - /mnt/results/wildfire_progression/gfosobi8/checkpoints     # fold 2
+      - /mnt/results/wildfire_progression/cc5fbgta/checkpoints     # fold 3
+
+
   data.data_fold_id:
     values:
       - 0
@@ -52,6 +54,14 @@ parameters:
     value: 10000
       # - 20000
       # - 30000
+
+  trainer.default_root_dir:
+    values:
+      - /develop/results/stage2_fold0
+      - /develop/results/stage2_fold1
+      - /develop/results/stage2_fold2
+      - /develop/results/stage2_fold3    
+
   do_test:
     value: true
 program: src/train.py
