@@ -20,7 +20,7 @@ CHECKPOINT_MAP = {
     0: "/develop/results/wildfire_progression/tc8waap3/checkpoints",
     1: "/develop/results/wildfire_progression/gemkrqiy/checkpoints",
     2: "/develop/results/wildfire_progression/gfosobi8/checkpoints",
-    3: "/develop/results/wildfire_progression/cc5bgta/checkpoints",
+    3: "/develop/results/wildfire_progression/cc5fbgta/checkpoints",
 }
 
 OUTPUT_ROOT = "/develop/results"

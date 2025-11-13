@@ -6,15 +6,15 @@ from ..BaseModel import BaseModel
 
 
 # ------------------------------------------------------------
-#  DOMAIN DISCRIMINATOR NETWORK
+# DOMAIN DISCRIMINATOR NETWORK
 # ------------------------------------------------------------
 class DomainLogitHead(nn.Module):
     """3-layer MLP domain classifier D(f) = p(source|feature)."""
     def __init__(self, in_channels=512):
         super().__init__()
         self.net = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),  # (B, C, H, W) → (B, C, 1, 1)
-            nn.Flatten(),             # (B, C)
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
             nn.Linear(in_channels, 1024),
             nn.BatchNorm1d(1024),
             nn.ReLU(),
@@ -23,7 +23,7 @@ class DomainLogitHead(nn.Module):
             nn.BatchNorm1d(1024),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(1024, 1),       # Binary domain logit
+            nn.Linear(1024, 1),
         )
 
     def forward(self, x):
@@ -31,26 +31,33 @@ class DomainLogitHead(nn.Module):
 
 
 # ------------------------------------------------------------
-#  STAGE 2: DOMAIN WEIGHT ESTIMATOR (IWAN)
+# STAGE 2: IWAN DOMAIN WEIGHT ESTIMATOR
 # ------------------------------------------------------------
 class IWANStage2_WeightEstimator(BaseModel):
+    """
+    Stage 2 of IWAN (Zhang et al., CVPR 2018)
+    -----------------------------------------
+    - Loads frozen encoder Fs from Stage 1
+    - Uses flattened temporal dimension if BaseModel.flatten_temporal_dimension=True
+    - Trains domain discriminator D to distinguish source vs target
+    """
+
     def __init__(
         self,
-        ckpt_dir: str = None,                   # 👈 must exist explicitly here
+        ckpt_dir: str = None,
         encoder_name: str = "resnet18",
         n_channels: int = 7,
-        **kwargs
+        flatten_temporal_dimension: bool = True,  # ✅ important
+        **kwargs,
     ):
-        super().__init__(n_channels=n_channels, **kwargs)
+        super().__init__(n_channels=n_channels, flatten_temporal_dimension=flatten_temporal_dimension, **kwargs)
         self.save_hyperparameters()
 
-        if not os.path.isdir(ckpt_dir):
-            alt_dir = ckpt_dir.replace("/mnt/", "/develop/", 1)
-            if os.path.isdir(alt_dir):
-                print(f"🔁 Remapped ckpt_dir → {alt_dir}")
-                ckpt_dir = alt_dir
-            else:
-                raise FileNotFoundError(f"❌ ckpt_dir not found: {ckpt_dir}")
+        # --------------------------------------------------------
+        # 1. Load pretrained encoder (Stage 1)
+        # --------------------------------------------------------
+        if ckpt_dir is None or not os.path.isdir(ckpt_dir):
+            raise FileNotFoundError(f"❌ ckpt_dir not found or None: {ckpt_dir}")
 
         ckpt_files = [f for f in os.listdir(ckpt_dir) if f.endswith(".ckpt")]
         if not ckpt_files:
@@ -72,6 +79,7 @@ class IWANStage2_WeightEstimator(BaseModel):
             strict=False,
         )
 
+        # Freeze encoder
         self.Fs = base_model.encoder.eval()
         for p in self.Fs.parameters():
             p.requires_grad_(False)
@@ -80,11 +88,16 @@ class IWANStage2_WeightEstimator(BaseModel):
         self.bce = nn.BCEWithLogitsLoss()
         self.target_iter = None
 
-
     # ------------------------------------------------------------
     # HELPER: Forward through frozen encoder + domain head
     # ------------------------------------------------------------
     def forward_D(self, x_s, x_t):
+        # ✅ Flatten temporal dim via BaseModel setting (same logic as segmentation models)
+        if self.hparams.flatten_temporal_dimension and x_s.ndim == 5:
+            x_s = x_s.flatten(start_dim=1, end_dim=2)
+        if self.hparams.flatten_temporal_dimension and x_t.ndim == 5:
+            x_t = x_t.flatten(start_dim=1, end_dim=2)
+
         with torch.no_grad():
             f_s = self.Fs(x_s)[-1]
             f_t = self.Fs(x_t)[-1]
@@ -103,44 +116,39 @@ class IWANStage2_WeightEstimator(BaseModel):
     # TRAINING
     # ------------------------------------------------------------
     def on_train_start(self):
-        """Prepare a lazy target iterator to avoid blocking at setup."""
         dm = self.trainer.datamodule
         self.target_iter = iter(dm.target_dataloader())
         print("🟢 Initialized target iterator for Stage 2 training.")
 
     def training_step(self, batch, _):
         x_s, _ = batch[0], batch[1]
-
-        # get a target batch
         try:
             x_t, _ = next(self.target_iter)
         except StopIteration:
             self.target_iter = iter(self.trainer.datamodule.target_dataloader())
             x_t, _ = next(self.target_iter)
 
-        x_t = x_t.to(self.device, non_blocking=True)
         x_s = x_s.to(self.device, non_blocking=True)
+        x_t = x_t.to(self.device, non_blocking=True)
 
         loss, acc = self.forward_D(x_s, x_t)
-        self.log("train_loss_D", loss, prog_bar=True, on_epoch=True, on_step=False)
-        self.log("train_domain_acc", acc, prog_bar=True, on_epoch=True, on_step=False)
+        self.log("train_loss_D", loss, prog_bar=True, on_epoch=True)
+        self.log("train_domain_acc", acc, prog_bar=True, on_epoch=True)
         return loss
 
     # ------------------------------------------------------------
     # VALIDATION
     # ------------------------------------------------------------
     def validation_step(self, batch, _):
-        """Compute D’s validation loss on held-out source/target samples."""
         x_s, _ = batch[0], batch[1]
-
         try:
             x_t, _ = next(self.target_iter)
         except StopIteration:
             self.target_iter = iter(self.trainer.datamodule.target_dataloader())
             x_t, _ = next(self.target_iter)
 
-        x_t = x_t.to(self.device, non_blocking=True)
         x_s = x_s.to(self.device, non_blocking=True)
+        x_t = x_t.to(self.device, non_blocking=True)
 
         val_loss, val_acc = self.forward_D(x_s, x_t)
         self.log("val_loss_D", val_loss, prog_bar=True, on_epoch=True)
