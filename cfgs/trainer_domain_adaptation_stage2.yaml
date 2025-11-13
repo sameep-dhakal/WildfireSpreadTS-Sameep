@@ -37,8 +37,6 @@ min_epochs: 1
 max_steps: -1
 min_steps: -1
 
-do_validate: false
-do_test: false
 
 # 🔥 disable validation for Stage 2 (IWAN)
 check_val_every_n_epoch: null
