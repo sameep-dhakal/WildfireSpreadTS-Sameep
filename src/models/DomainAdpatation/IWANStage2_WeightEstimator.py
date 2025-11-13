@@ -43,7 +43,7 @@ class IWANStage2_WeightEstimator(BaseModel):
     """
     def __init__(
         self,
-        ckpt_dir: str,
+        ckpt_dir: str = None,
         encoder_name: str = "resnet18",
         n_channels: int = 7,
         flatten_temporal_dimension: bool = True,
