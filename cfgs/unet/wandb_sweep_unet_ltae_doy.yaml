@@ -13,7 +13,7 @@ command:
 method: grid
 metric:
   goal: minimize
-  name: val_loss_D # Minimize the domain discriminator loss during weight estimation
+  name: score_D_epoch # Minimize the domain discriminator loss during weight estimation
 parameters:
   model.class_path:
     value: models.DomainAdpatation.IWANStage2_WeightEstimator.IWANStage2_WeightEstimator
@@ -45,7 +45,9 @@ parameters:
     value: 10000
       # - 20000
       # - 30000
+  do_validate:
+    value: false    
   do_test:
-    value: true
+    value: false
 program: src/train.py
 
