@@ -1,5 +1,5 @@
 # ======================================================
-# Trainer configuration for Stage 2 (Weight Estimator)
+# Trainer configuration for Stage 2 (IWAN Weight Estimator)
 # ======================================================
 
 accelerator: gpu
@@ -9,36 +9,41 @@ num_nodes: 1
 precision: 32-true
 
 logger:
-  class_path: pytorch_lightning.loggers.wandb.WandbLogger
+  class_path: pytorch_lightning.loggers.WandbLogger
   init_args:
-    project: domain_adaptation_res50
-    log_model: true
+    project: domain_adaptation_res50_stage2
+     # Determined via argument linking in train.py
+    log_model: false
 
 # ======================================================
-# Checkpoint callback — monitors val_loss_D instead of val_avg_precision
+# Checkpoint callback — use TRAINING metric (no validation in Stage 2)
 # ======================================================
 callbacks:
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
-      monitor: val_loss_D          # discriminator validation loss
-      mode: min                    # lower is better
-      save_top_k: 1                # keep only best one
-      save_last: true              # keep last as fallback
-      filename: "{epoch}-{val_loss_D:.4f}"
+      monitor: score_D_epoch        # custom training metric logged in LightningModule
+      mode: min                     # lower score is better
+      save_top_k: 1                 # keep best only
+      save_last: true               # keep last as fallback
+      filename: "epoch={epoch}-score={score_D_epoch:.4f}"
       auto_insert_metric_name: false
 
 # ======================================================
 # Basic trainer settings
 # ======================================================
 fast_dev_run: false
-max_epochs: 50                     # usually enough for D to converge
+max_epochs: 50
 min_epochs: 1
 max_steps: -1
 min_steps: -1
-check_val_every_n_epoch: 1         # run val loop every epoch
+
+# 🔥 disable validation for Stage 2 (IWAN)
+check_val_every_n_epoch: null
 val_check_interval: null
-num_sanity_val_steps: 0            # skip sanity checks since we validate manually
-log_every_n_steps: 25              # W&B logging frequency
+limit_val_batches: 0
+num_sanity_val_steps: 0
+
+log_every_n_steps: 25
 
 enable_checkpointing: true
 enable_progress_bar: true
@@ -57,6 +62,6 @@ reload_dataloaders_every_n_epochs: 0
 
 # ======================================================
 # Default output directory
-# Will be overridden by sweep to /develop/results/stage2_foldX
+# Sweep will override this to /develop/results/stage2_foldX
 # ======================================================
 default_root_dir: /develop/results/
