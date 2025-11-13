@@ -45,6 +45,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         - Checkpoints monitor training metric score_D_epoch
     """
     def __init__(
+        self,                                    # 👈 THIS LINE WAS MISSING
         # ----- arguments expected by your UNet config / BaseModel -----
         encoder_name: str = "resnet18",
         encoder_weights: Optional[str] = None,   # accepted for compatibility, not used
