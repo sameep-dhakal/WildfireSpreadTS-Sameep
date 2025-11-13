@@ -1,7 +1,10 @@
 import os
+from typing import Optional, Tuple
+
 import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
+
 from ..BaseModel import BaseModel
 
 
@@ -10,7 +13,7 @@ from ..BaseModel import BaseModel
 # ------------------------------------------------------------
 class DomainLogitHead(nn.Module):
     """Simple 3-layer MLP: D(f) → logit."""
-    def __init__(self, in_channels):
+    def __init__(self, in_channels: int):
         super().__init__()
         self.net = nn.Sequential(
             nn.AdaptiveAvgPool2d(1),   # (B, C, H, W) -> (B, C, 1, 1)
@@ -24,9 +27,9 @@ class DomainLogitHead(nn.Module):
             nn.Linear(512, 1),         # logit
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).squeeze(1)
-    
+
 
 # ------------------------------------------------------------
 # IWAN STAGE-2  (WEIGHT ESTIMATOR)
@@ -42,23 +45,42 @@ class IWANStage2_WeightEstimator(BaseModel):
         - Checkpoints monitor training metric score_D_epoch
     """
     def __init__(
-        self,
-        ckpt_dir: str = None,
+        # ----- arguments expected by your UNet config / BaseModel -----
         encoder_name: str = "resnet18",
+        encoder_weights: Optional[str] = None,   # accepted for compatibility, not used
+        in_channels: Optional[int] = None,       # for compatibility; if given, overrides n_channels
         n_channels: int = 7,
         flatten_temporal_dimension: bool = True,
+        pos_class_weight: float = 1.0,
+        loss_function: str = "BCE",
+        use_doy: bool = False,
+        crop_before_eval: bool = False,
+        required_img_size: Optional[Tuple[int, int]] = None,
+        alpha_focal: Optional[float] = None,
+        f1_threshold: Optional[float] = None,
+        # ----- stage-2 specific -----
+        ckpt_dir: str = None,
         **kwargs,
     ):
-        # BaseModel needs pos_class_weight + loss, but we ignore those
+        # Let in_channels override n_channels if provided (so both configs work)
+        if in_channels is not None:
+            n_channels = in_channels
+
+        # Initialise BaseModel exactly like other models, so CLI config matches.
         super().__init__(
             n_channels=n_channels,
             flatten_temporal_dimension=flatten_temporal_dimension,
-            pos_class_weight=1.0,
-            loss_function="BCE",
-            use_doy=False,
-            **kwargs
+            pos_class_weight=pos_class_weight,
+            loss_function=loss_function,
+            use_doy=use_doy,
+            crop_before_eval=crop_before_eval,
+            required_img_size=required_img_size,
+            alpha_focal=alpha_focal,
+            f1_threshold=f1_threshold,
+            **kwargs,
         )
 
+        # Save ALL hyperparameters including ckpt_dir, encoder_name, etc.
         self.save_hyperparameters()
 
         # ------------------------------------------------------------
@@ -77,8 +99,8 @@ class IWANStage2_WeightEstimator(BaseModel):
         # Load UNet backbone
         base_model = smp.Unet(
             encoder_name=encoder_name,
-            encoder_weights=None,
-            in_channels=n_channels,
+            encoder_weights=None,      # Stage-1 ckpt already has learned weights
+            in_channels=n_channels,    # temporal flattened channels
             classes=1,
         )
 
@@ -108,8 +130,7 @@ class IWANStage2_WeightEstimator(BaseModel):
     # ------------------------------------------------------------
     # Forward through encoder + domain head
     # ------------------------------------------------------------
-    def forward_D(self, x_s, x_t):
-
+    def forward_D(self, x_s: torch.Tensor, x_t: torch.Tensor):
         # flatten temporal dimension (B, T, C, H, W) → (B, T*C, H, W)
         if self.hparams.flatten_temporal_dimension and x_s.ndim == 5:
             x_s = x_s.flatten(start_dim=1, end_dim=2)
@@ -182,7 +203,7 @@ class IWANStage2_WeightEstimator(BaseModel):
     # ------------------------------------------------------------
     # Forward_OVERRIDE (never used for segmentation)
     # ------------------------------------------------------------
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # flatten if needed
         if self.hparams.flatten_temporal_dimension and x.ndim == 5:
             x = x.flatten(start_dim=1, end_dim=2)
