@@ -17,6 +17,12 @@ callbacks:
       monitor: score_D_epoch
       mode: min
       save_on_train_epoch_end: true       
+  
+  # Always save last epoch
+  - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
+    init_args:
+      save_last: true
+      filename: "last"      
 
 fast_dev_run: false
 max_epochs: 500
