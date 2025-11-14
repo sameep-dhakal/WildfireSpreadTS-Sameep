@@ -1,7 +1,3 @@
-# ======================================================
-# Trainer configuration for Stage 2 (IWAN Weight Estimator)
-# ======================================================
-
 accelerator: gpu
 strategy: auto
 devices: 1
@@ -11,40 +7,28 @@ precision: 32-true
 logger:
   class_path: pytorch_lightning.loggers.WandbLogger
   init_args:
-    project: domain_adaptation_res50_stage2
-     # Determined via argument linking in train.py
-    log_model: false
+    project: domain_adaptation_res50
+    log_model: true
 
-# ======================================================
-# Checkpoint callback — use TRAINING metric (no validation in Stage 2)
-# ======================================================
 callbacks:
-  - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
+  - class_path: pytorch_lightning.callbacks.ModelCheckpoint
     init_args:
-      monitor: score_D_epoch        # custom training metric logged in LightningModule
-      mode: min                     # lower score is better
-      save_top_k: 1                 # keep best only
-      save_last: true               # keep last as fallback
-      filename: "epoch={epoch}-score={score_D_epoch:.4f}"
-      auto_insert_metric_name: false
+      monitor: train_loss_D_epoch        # <-- same style as train_loss_epoch
+      mode: min
+      save_top_k: 1
+      save_last: true
 
-# ======================================================
-# Basic trainer settings
-# ======================================================
 fast_dev_run: false
 max_epochs: 50
-min_epochs: 1
+min_epochs: -1
 max_steps: -1
 min_steps: -1
 
-
-# 🔥 disable validation for Stage 2 (IWAN)
+# Stage-2 has no validation, but checkpointing still works
 check_val_every_n_epoch: null
 val_check_interval: null
 limit_val_batches: 0
 num_sanity_val_steps: 0
-
-log_every_n_steps: 25
 
 enable_checkpointing: true
 enable_progress_bar: true
@@ -52,17 +36,12 @@ enable_model_summary: true
 accumulate_grad_batches: 1
 
 deterministic: warn
-benchmark: true
+benchmark: false
 
-inference_mode: false     # VERY IMPORTANT
-use_distributed_sampler: true
-detect_anomaly: false
-barebones: false
-sync_batchnorm: false
+# MUST be false for full training loop
+inference_mode: false
+
 reload_dataloaders_every_n_epochs: 0
 
-# ======================================================
-# Default output directory
-# Sweep will override this to /develop/results/stage2_foldX
-# ======================================================
+# The root directory is the same as Stage-1
 default_root_dir: /develop/results/
