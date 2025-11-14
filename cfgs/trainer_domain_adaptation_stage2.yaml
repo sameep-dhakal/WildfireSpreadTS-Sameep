@@ -8,6 +8,7 @@ logger:
   class_path: pytorch_lightning.loggers.WandbLogger
   init_args:
     project: domain_adaptation_res50
+    save_dir: /develop/results/
     log_model: true
 
 callbacks:
