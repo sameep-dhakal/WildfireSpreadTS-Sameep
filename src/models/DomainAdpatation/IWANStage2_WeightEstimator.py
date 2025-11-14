@@ -8,48 +8,48 @@ import segmentation_models_pytorch as smp
 from ..BaseModel import BaseModel
 
 
-# ------------------------------------------------------------
-# DOMAIN DISCRIMINATOR NETWORK
-# ------------------------------------------------------------
+# ============================================================
+# DOMAIN HEAD (DISCRIMINATOR)
+# ============================================================
 class DomainLogitHead(nn.Module):
-    """Simple 3-layer MLP: D(f) → logit."""
+    """Small stable MLP: pooled feature map → logit."""
     def __init__(self, in_channels: int):
         super().__init__()
         self.net = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),   # (B, C, H, W) -> (B, C, 1, 1)
+            nn.AdaptiveAvgPool2d(1),   # (B, C, H, W) → (B, C, 1, 1)
             nn.Flatten(),              # (B, C)
-            nn.Linear(in_channels, 1024),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(1024, 512),
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(512, 1),         # logit
+            nn.Linear(in_channels, 512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.1),
+            nn.Linear(512, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.1),
+            nn.Linear(128, 1),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
         return self.net(x).squeeze(1)
+        
 
-
-# ------------------------------------------------------------
-# IWAN STAGE-2  (WEIGHT ESTIMATOR)
-# ------------------------------------------------------------
+# ============================================================
+# IWAN STAGE 2 WEIGHT ESTIMATOR
+# ============================================================
 class IWANStage2_WeightEstimator(BaseModel):
     """
-    Stage-2 of IWAN:
-        - Loads encoder Fs from Stage-1 checkpoint
-        - Freezes Fs completely
-        - Trains ONLY the domain head D
-        - No segmentation forward is used
-        - No validation in Trainer
-        - Checkpoints monitor training metric score_D_epoch
+    IWAN Stage-2:
+        - Load encoder Fs from Stage-1 (UNet)
+        - Freeze encoder (including disabling BN updates)
+        - Train only a small domain classifier D
+        - No segmentation
+        - No validation
+        - Checkpoint monitors: score_D_epoch (min)
     """
+
     def __init__(
-        self,                                    # 👈 THIS LINE WAS MISSING
-        # ----- arguments expected by your UNet config / BaseModel -----
+        self,
         encoder_name: str = "resnet18",
-        encoder_weights: Optional[str] = None,   # accepted for compatibility, not used
-        in_channels: Optional[int] = None,       # for compatibility; if given, overrides n_channels
+        encoder_weights: Optional[str] = None,
+        in_channels: Optional[int] = None,
         n_channels: int = 7,
         flatten_temporal_dimension: bool = True,
         pos_class_weight: float = 1.0,
@@ -59,15 +59,14 @@ class IWANStage2_WeightEstimator(BaseModel):
         required_img_size: Optional[Tuple[int, int]] = None,
         alpha_focal: Optional[float] = None,
         f1_threshold: Optional[float] = None,
-        # ----- stage-2 specific -----
         ckpt_dir: str = None,
         **kwargs,
     ):
-        # Let in_channels override n_channels if provided (so both configs work)
+        # allow in_channels override
         if in_channels is not None:
             n_channels = in_channels
 
-        # Initialise BaseModel exactly like other models, so CLI config matches.
+        # initialize BaseModel (Lightning compatible)
         super().__init__(
             n_channels=n_channels,
             flatten_temporal_dimension=flatten_temporal_dimension,
@@ -81,65 +80,77 @@ class IWANStage2_WeightEstimator(BaseModel):
             **kwargs,
         )
 
-        # Save ALL hyperparameters including ckpt_dir, encoder_name, etc.
+        # save all hparams
         self.save_hyperparameters()
 
-        # ------------------------------------------------------------
-        # Load Stage-1 checkpoint
-        # ------------------------------------------------------------
+        # ---------------------------------------------
+        # LOAD STAGE-1 CHECKPOINT
+        # ---------------------------------------------
         if ckpt_dir is None or not os.path.isdir(ckpt_dir):
-            raise FileNotFoundError(f"❌ Checkpoint directory not found: {ckpt_dir}")
+            raise FileNotFoundError(f"❌ Stage-1 ckpt directory not found: {ckpt_dir}")
 
         ckpt_files = [f for f in os.listdir(ckpt_dir) if f.endswith(".ckpt")]
         if not ckpt_files:
-            raise FileNotFoundError(f"❌ No .ckpt found inside {ckpt_dir}")
+            raise FileNotFoundError(f"❌ No .ckpt files found in {ckpt_dir}")
 
         ckpt_path = os.path.join(ckpt_dir, ckpt_files[0])
-        print(f"✅ Loading encoder from Stage-1 checkpoint: {ckpt_path}")
+        print(f"✅ Loading Stage-1 encoder from: {ckpt_path}")
 
-        # Load UNet backbone
-        base_model = smp.Unet(
+        stage1 = smp.Unet(
             encoder_name=encoder_name,
-            encoder_weights=None,      # Stage-1 ckpt already has learned weights
-            in_channels=n_channels,    # temporal flattened channels
+            encoder_weights=None,
+            in_channels=n_channels,
             classes=1,
         )
 
         ckpt = torch.load(ckpt_path, map_location="cpu")
         sd = ckpt.get("state_dict", ckpt)
 
-        # Load encoder weights only
-        base_model.load_state_dict(
-            {k.replace("model.", ""): v
-             for k, v in sd.items()
-             if "model.encoder" in k},
-            strict=False,
+        # load encoder weights only
+        stage1.load_state_dict(
+            {k.replace("model.", ""): v for k, v in sd.items() if "encoder" in k},
+            strict=False
         )
 
-        # Freeze encoder
-        self.Fs = base_model.encoder.eval()
+        # ---------------------------------------------
+        # CORRECT MODULE REGISTRATION
+        # ---------------------------------------------
+        self.Fs = stage1.encoder            # register module
+        self.Fs.eval()                      # set eval mode
+
+        # Fully freeze encoder parameters
         for p in self.Fs.parameters():
             p.requires_grad_(False)
 
-        # Create discriminator head
-        self.D = DomainLogitHead(self.Fs.out_channels[-1])
+        # Disable BN update
+        for m in self.Fs.modules():
+            if isinstance(m, nn.BatchNorm2d):
+                m.track_running_stats = False
+                m.running_mean = None
+                m.running_var = None
+
+        # ---------------------------------------------
+        # DOMAIN DISCRIMINATOR
+        # ---------------------------------------------
+        feat_dim = self.Fs.out_channels[-1]
+        self.D = DomainLogitHead(feat_dim)
         self.bce = nn.BCEWithLogitsLoss()
 
-        # Will store target iterator
+        # iterator for target batches
         self.target_iter = None
 
-    # ------------------------------------------------------------
-    # Forward through encoder + domain head
-    # ------------------------------------------------------------
-    def forward_D(self, x_s: torch.Tensor, x_t: torch.Tensor):
-        # flatten temporal dimension (B, T, C, H, W) → (B, T*C, H, W)
+    # ============================================================
+    # DISCRIMINATOR FORWARD
+    # ============================================================
+    def forward_D(self, x_s, x_t):
+        # flatten T dimension if needed
         if self.hparams.flatten_temporal_dimension and x_s.ndim == 5:
-            x_s = x_s.flatten(start_dim=1, end_dim=2)
+            x_s = x_s.flatten(1, 2)
         if self.hparams.flatten_temporal_dimension and x_t.ndim == 5:
-            x_t = x_t.flatten(start_dim=1, end_dim=2)
+            x_t = x_t.flatten(1, 2)
 
-        with torch.no_grad():
-            f_s = self.Fs(x_s)[-1]   # final encoder feature map
+        with torch.no_grad():                      # encoder NEVER updates
+            f_s = self.Fs(x_s)[-1]
             f_t = self.Fs(x_t)[-1]
 
         log_s = self.D(f_s)
@@ -155,18 +166,17 @@ class IWANStage2_WeightEstimator(BaseModel):
             p_t = torch.sigmoid(log_t)
             acc = 0.5 * ((p_s > 0.5).float().mean() + (p_t < 0.5).float().mean())
 
-        # For checkpoint monitoring
         score = loss.detach()
 
         return loss, acc, score
 
-    # ------------------------------------------------------------
+    # ============================================================
     # TRAINING LOOP
-    # ------------------------------------------------------------
+    # ============================================================
     def on_train_start(self):
         dm = self.trainer.datamodule
         self.target_iter = iter(dm.target_dataloader())
-        print("🟢 Stage-2: target dataloader iterator initialized.")
+        print("🟢 Stage-2: initialized target iterator")
 
     def training_step(self, batch, _):
         x_s, _ = batch
@@ -182,32 +192,30 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         loss, acc, score = self.forward_D(x_s, x_t)
 
-        self.log("train_loss_D", loss, prog_bar=True, on_epoch=True)
-        self.log("train_domain_acc", acc, prog_bar=True, on_epoch=True)
-        self.log("score_D", score, prog_bar=False, on_epoch=True, logger=True)
+        self.log("train_loss_D", loss, on_epoch=True, prog_bar=True)
+        self.log("train_domain_acc", acc, on_epoch=True, prog_bar=True)
+        self.log("score_D", score, on_epoch=True, prog_bar=False)
 
         return loss
 
-    # ------------------------------------------------------------
-    # Disable validation logic completely
-    # ------------------------------------------------------------
+    # ============================================================
+    # NO VALIDATION
+    # ============================================================
     def validation_step(self, *args, **kwargs):
         return None
 
-    # ------------------------------------------------------------
-    # Optimizer
-    # ------------------------------------------------------------
+    # ============================================================
+    # CORRECT OPTIMIZER (NOW NOT OVERRIDDEN BY CLI)
+    # ============================================================
     def configure_optimizers(self):
-        # Only train domain head D
-        return torch.optim.Adam(self.D.parameters(), lr=1e-4)
+        return torch.optim.Adam(self.D.parameters(), lr=5e-5)
 
-    # ------------------------------------------------------------
-    # Forward_OVERRIDE (never used for segmentation)
-    # ------------------------------------------------------------
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # flatten if needed
+    # ============================================================
+    # FORWARD (NEVER USED)
+    # ============================================================
+    def forward(self, x):
         if self.hparams.flatten_temporal_dimension and x.ndim == 5:
-            x = x.flatten(start_dim=1, end_dim=2)
+            x = x.flatten(1, 2)
 
         with torch.no_grad():
             f = self.Fs(x)[-1]

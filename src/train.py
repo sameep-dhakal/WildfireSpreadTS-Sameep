@@ -112,11 +112,16 @@ class MyLightningCLI(LightningCLI):
 
         wandb.save(config_file, policy="now", base_path=wandb.run.dir)
 
-        wandb.define_metric("train_loss_epoch", summary="min")
-        wandb.define_metric("val_loss", summary="min")
-        wandb.define_metric("train_f1_epoch", summary="max")
-        wandb.define_metric("val_f1", summary="max")
-        wandb.define_metric("val_avg_precision", summary="max")
+        # wandb.define_metric("train_loss_epoch", summary="min")
+        # wandb.define_metric("val_loss", summary="min")
+        # wandb.define_metric("train_f1_epoch", summary="max")
+        # wandb.define_metric("val_f1", summary="max")
+        # wandb.define_metric("val_avg_precision", summary="max")
+
+        wandb.define_metric("train_loss_D_epoch", summary="min")
+        wandb.define_metric("train_domain_acc_epoch", summary="max")
+        wandb.define_metric("score_D_epoch", summary="min")
+
 
 
 # =====================================================================
@@ -132,7 +137,7 @@ def main():
         parser_kwargs={"parser_mode": "yaml"},
         run=False
     )
-    cli.wandb_setup()
+    # cli.wandb_setup()
 
     if cli.config.do_train:
         cli.trainer.fit(cli.model, cli.datamodule,
