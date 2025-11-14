@@ -184,7 +184,7 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         self.log("train_loss_D", loss, prog_bar=True, on_epoch=True)
         self.log("train_domain_acc", acc, prog_bar=True, on_epoch=True)
-        self.log("score_D_epoch", score, prog_bar=False, on_epoch=True)
+        self.log("score_D", score, prog_bar=False, on_epoch=True, logger=True)
 
         return loss
 
