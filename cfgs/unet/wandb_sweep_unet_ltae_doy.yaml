@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-stage2-res50
+project: wildfire-resnet18-5daya-removevalidation
 command:
   - ${env}
   - python
@@ -13,19 +13,19 @@ command:
 method: grid
 metric:
   goal: minimize
-  name: score_D_epoch # Minimize the domain discriminator loss during weight estimation
+  name: train_loss # Minimize the domain discriminator loss during weight estimation
 parameters:
   model.class_path:
-    value: models.DomainAdpatation.IWANStage2_WeightEstimator.IWANStage2_WeightEstimator
+    value: models.SMPModel
   model.use_doy:
     value: false
 
   data.data_fold_id:
     values:
       - 0
-      - 3
-      - 2
       - 1
+      - 2
+      - 3
   data.features_to_keep:
     values:
       - [0, 1, 2, 3, 4, 38, 39]
@@ -34,7 +34,7 @@ parameters:
   data.n_leading_observations:
     values:
       - 1
-      # - 5
+      - 5
   data.remove_duplicate_features:
     value: true    #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
