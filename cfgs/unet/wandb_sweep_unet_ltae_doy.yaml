@@ -1,4 +1,4 @@
-project: wildfire-resnet18-5daya-removevalidation
+project: wildfire-resnet18-removevalidation
 command:
   - ${env}
   - python
