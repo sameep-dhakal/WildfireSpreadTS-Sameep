@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 
-def get_means_stds_missing_values(training_years: List[int]):
+def get_means_stds_missing_values(training_years: int):
     """_summary_ Returns mean and std values as tensor, computed on unaugmented and unstandardized 
     data of the indicated training years. We don't clip values, because min/max did not diverge 
     much from the 0.1 and 99.9 percentiles. Some variables are not standardized, indicated by mean=0, std=1. 
@@ -16,7 +16,7 @@ def get_means_stds_missing_values(training_years: List[int]):
     Returns:
         _type_: _description_
     """
-    if 2018 in training_years or 2014 in training_years:
+    if 2012 <= training_years <= 2022:
         print("Using means for Jake Data")
         stats_per_training_year_combo = {
         (2012): {
@@ -100,7 +100,7 @@ def get_means_stds_missing_values(training_years: List[int]):
         )
     },
 
-        (2013,): {
+        (2013): {
         'means': np.array(
             [           2165.5051995512717,
             3272.063019041955,
