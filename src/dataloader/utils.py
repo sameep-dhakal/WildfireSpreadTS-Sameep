@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 
-def get_means_stds_missing_values(training_years: int):
+def get_means_stds_missing_values(training_years: List[int]):
     """_summary_ Returns mean and std values as tensor, computed on unaugmented and unstandardized 
     data of the indicated training years. We don't clip values, because min/max did not diverge 
     much from the 0.1 and 99.9 percentiles. Some variables are not standardized, indicated by mean=0, std=1. 
@@ -19,7 +19,7 @@ def get_means_stds_missing_values(training_years: int):
     if 2012 <= training_years <= 2022:
         print("Using means for Jake Data")
         stats_per_training_year_combo = {
-        (2012): {
+        (2012,): {
         'means': np.array(
             [           2126.4719714157513,
             2941.2754261310424,
@@ -100,7 +100,7 @@ def get_means_stds_missing_values(training_years: int):
         )
     },
 
-        (2013): {
+        (2013,): {
         'means': np.array(
             [           2165.5051995512717,
             3272.063019041955,
@@ -180,7 +180,7 @@ def get_means_stds_missing_values(training_years: int):
             dtype=np.float32
         )
     },
-    (2014): {
+    (2014,): {
         'means': np.array(
             [           2379.419047532176,
             3415.5601922700953,
@@ -260,7 +260,7 @@ def get_means_stds_missing_values(training_years: int):
             dtype=np.float32
         )
     },
-    (2015): {
+    (2015,): {
         'means': np.array(
             [           2132.191272172341,
             3283.963058584378,
@@ -342,7 +342,7 @@ def get_means_stds_missing_values(training_years: int):
     },
 
 
-    (2016): {
+    (2016,): {
         "means": np.array([
             2013.7826029074365,
             2839.504639852519,
@@ -419,7 +419,7 @@ def get_means_stds_missing_values(training_years: int):
             0.9991879966847719
         ], dtype=np.float32)
     },
-    (2017): {
+    (2017,): {
         "means": np.array([
             1862.474006882481,
             2848.3793989301666,
@@ -496,7 +496,7 @@ def get_means_stds_missing_values(training_years: int):
             0.9988803247444222
         ], dtype=np.float32)
     },
-    (2018): {
+    (2018,): {
         "means": np.array([
             1943.2988478509762,
             2926.70938773098,
@@ -573,7 +573,7 @@ def get_means_stds_missing_values(training_years: int):
             0.9987164219914371
         ], dtype=np.float32)
     },
-    (2019): {
+    (2019,): {
         "means": np.array([
             2001.0374027520768,
             2990.1933602679055,
@@ -650,7 +650,7 @@ def get_means_stds_missing_values(training_years: int):
             0.9996044455899391
         ], dtype=np.float32)
     },
-    (2020): {
+    (2020,): {
         "means": np.array([
             1909.6291692451023,
             2888.7552893482803,
@@ -727,7 +727,7 @@ def get_means_stds_missing_values(training_years: int):
             0.9980444813210937
         ], dtype=np.float32)
     },
-    (2021): {
+    (2021,): {
         "means": np.array([
             1834.5194964837665,
             3014.054481641048,
@@ -804,7 +804,7 @@ def get_means_stds_missing_values(training_years: int):
             0.9975504264639805
         ], dtype=np.float32)
     },
-    (2022): {
+    (2022,): {
         "means": np.array([
             2205.8186533287867,
             3179.3356898462644,
@@ -881,7 +881,7 @@ def get_means_stds_missing_values(training_years: int):
             0.9992213466679938
         ], dtype=np.float32)
     },
-    (2023): {
+    (2023,): {
         "means": np.array([
             1827.940527671476,
             3255.043956908621,
