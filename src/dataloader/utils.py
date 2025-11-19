@@ -16,7 +16,7 @@ def get_means_stds_missing_values(training_years: List[int]):
     Returns:
         _type_: _description_
     """
-    if 2012 <= training_years <= 2022:
+    if all(2012 <= y <= 2022 for y in training_years):
         print("Using means for Jake Data")
         stats_per_training_year_combo = {
         (2012,): {
