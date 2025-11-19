@@ -221,15 +221,15 @@ class FireSpreadDataModule(LightningDataModule):
             # This fold structure exactly replicates the logic from the diagram (Figure 5),
             # with the new years (2012-2015) added to every training set.
             # The order is: [ 8 Training Years | 2 Validation Years | 2 Test Years ]
-            folds = [
-                (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
+            # folds = [
+            #     (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
                 
-                (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
+            #     (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
                 
-                (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2022, 2023, 2018, 2019),
+            #     (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2022, 2023, 2018, 2019),
                 
-                (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
-            ]
+            #     (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
+            # ]
 
             # folds = [
             #     ( 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
@@ -248,9 +248,17 @@ class FireSpreadDataModule(LightningDataModule):
             # test_years  = list(folds[data_fold_id][6:8])
 
                 # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
-            train_years = list(folds[data_fold_id][:10])
-            val_years   = list(folds[data_fold_id][8:10])
-            test_years  = list(folds[data_fold_id][10:12])
+           # All years you have
+            all_years = [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
+
+            # data_fold_id determines which year is used for training
+            train_years = [all_years[data_fold_id]]
+
+            # no validation years right now
+            val_years = []
+
+            # test on all OTHER years
+            test_years = [y for y in all_years if y != all_years[data_fold_id]]
 
         print(
             f"Using the following dataset split:\nTrain years: {train_years}, Val years: {val_years}, Test years: {test_years}")
