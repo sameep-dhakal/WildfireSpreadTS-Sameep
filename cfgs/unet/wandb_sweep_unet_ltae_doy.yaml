@@ -19,6 +19,9 @@ parameters:
     value: models.DomainAdpatation.IWANStage2_WeightEstimator.IWANStage2_WeightEstimator
   model.use_doy:
     value: false
+  model.source_year:
+    value: 2012
+  
 
   data.data_fold_id:
     values:
