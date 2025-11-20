@@ -627,7 +627,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         save_dir: Optional[str] = None,
 
         # training hyperparameters
-        inner_epochs: int = 3,
+        inner_epochs: int = 100,
         inner_steps_per_epoch: Optional[int] = None,
         lr: float = 5e-5,
 
