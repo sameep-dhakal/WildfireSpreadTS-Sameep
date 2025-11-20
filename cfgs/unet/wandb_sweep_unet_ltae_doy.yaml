@@ -21,8 +21,9 @@ parameters:
     value: false
   model.source_year:
     value: 2012
+  model.all_target_years: [2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023]
   
-
+  
   data.data_fold_id:
     values:
       - 0
