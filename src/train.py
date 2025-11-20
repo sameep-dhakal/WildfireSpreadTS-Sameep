@@ -31,6 +31,22 @@ class MyLightningCLI(LightningCLI):
         3: "/develop/results/wildfire-progression/cc5fbgta/checkpoints",
     }
 
+
+    STAGE1_CKPT_BY_YEAR = {
+    2012: "/develop/results/wildfire-progression/gvmlnd1k/checkpoints",
+    2013: "/develop/results/wildfire-progression/du8c545g/checkpoints",
+    2014: "/develop/results/wildfire-progression/z01uo2hd/checkpoints",
+    2015: "/develop/results/wildfire-progression/pqrmt6x3/checkpoints",
+    2016: "/develop/results/wildfire-progression/z8qfst4r/checkpoints",
+    2017: "/develop/results/wildfire-progression/le2xi881/checkpoints",
+    2018: "/develop/results/wildfire-progression/cwdakisi/checkpoints",
+    2019: "/develop/results/wildfire-progression/8qhqnjch/checkpoints",
+    2020: "/develop/results/wildfire-progression/p6j9l0th/checkpoints",
+    2021: "/develop/results/wildfire-progression/2ilct1o4/checkpoints",
+    2022: "/develop/results/wildfire-progression/l9a1y4dy/checkpoints",
+    2023: "/develop/results/wildfire-progression/pfr5ycr0/checkpoints",
+    }
+
     # =========================================================
     # STAGE-2 SAVE DIRS (WHERE IWAN STAGE-2 CHECKPOINTS WILL BE SAVED)
     # =========================================================
@@ -58,7 +74,7 @@ class MyLightningCLI(LightningCLI):
     # BEFORE MODEL / DATA / TRAINER CREATION
     # -----------------------------------------------------------------
     def before_instantiate_classes(self):
-        # ----- EXISTING CODE BELOW (n_channels, pos_class_weight, etc.) -----
+        # determine number of channels
         n_features = FireSpreadDataset.get_n_features(
             self.config.data.n_leading_observations,
             self.config.data.features_to_keep,
@@ -66,33 +82,43 @@ class MyLightningCLI(LightningCLI):
         )
         self.config.model.init_args.n_channels = n_features
 
+        # -------------------------------
+        # FETCH SOURCE YEAR CORRECTLY
+        # -------------------------------
+        source_year = int(self.config.model.init_args.source_year)
+
+        # compute pos_class_weight for THIS source_year
         train_years, _, _ = FireSpreadDataModule.split_fires(
-            self.config.data.data_fold_id,
+            source_year,
             self.config.data.additional_data,
-            self.config.data.target_year
         )
         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
         fire_rate = 1 - missing_values_rates[-1]
         self.config.model.init_args.pos_class_weight = float(1 / fire_rate)
 
-        # =========================================================
-        # AUTOMATICALLY SET STAGE-1 CHECKPOINT DIR (FOR LOADING)
-        # =========================================================
-        fold = self.config.data.data_fold_id
-        stage1_dir = self.STAGE1_CKPT_DIR[fold]
-        self.config.model.init_args.ckpt_dir = stage1_dir   # <---- IMPORTANT
-        print(f"🔥 Stage-1 encoder checkpoint will be loaded from:\n{stage1_dir}\n")
+        # -------------------------------
+        # map Stage-1 checkpoint by year
+        # -------------------------------
+        if source_year not in self.STAGE1_CKPT_BY_YEAR:
+            raise ValueError(f"No Stage-1 checkpoint for source_year={source_year}")
 
-        # =========================================================
-        # AUTOMATICALLY SET STAGE-2 SAVE DIR (FOR SAVING NEW CKPTS)
-        # =========================================================
-        save_dir = self.STAGE2_SAVE_DIR[fold]
+        stage1_dir = self.STAGE1_CKPT_BY_YEAR[source_year]
+        self.config.model.init_args.ckpt_dir = stage1_dir
+
+        print(f"🔥 Using Stage-1 encoder trained on YEAR {source_year}:")
+        print(f"   {stage1_dir}\n")
+
+        # -------------------------------
+        # map Stage-2 save directory
+        # -------------------------------
+        save_dir = f"/develop/results/domain_adaptation_stage2_outputs/{source_year}"
         os.makedirs(save_dir, exist_ok=True)
 
         self.config.trainer.default_root_dir = save_dir
         print(f"💾 Stage-2 checkpoints will be saved to:\n{save_dir}\n")
 
-    # -----------------------------------------------------------------
+   
+   # -----------------------------------------------------------------
     def before_fit(self):
         self.wandb_setup()
 

@@ -172,7 +172,7 @@ class FireSpreadDataModule(LightningDataModule):
         return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=True, num_workers=self.num_workers, pin_memory=True)
     
     @staticmethod
-    def split_fires(data_fold_id, additional_data, target_year):
+    def split_fires(source_year, additional_data, target_year = int(2012),):
         """_summary_ Split the years into train/val/test set.
 
         Args:
@@ -251,17 +251,13 @@ class FireSpreadDataModule(LightningDataModule):
             all_years = [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
 
             # data_fold_id determines which year is used for training
-            train_years = [all_years[data_fold_id]]
+            train_years = [source_year]
 
             # no validation years right now
             val_years = []
 
-
-            if target_year is None:
-                raise ValueError("target_year must be provided via YAML.")
-
             # test on all OTHER years
-            test_years = [target_year]
+            test_years = []
 
         print(
             f"Using the following dataset split:\nTrain years: {train_years}, Val years: {val_years}, Test years: {test_years}")
