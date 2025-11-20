@@ -51,6 +51,10 @@ parameters:
   data.return_doy:
     value: false
 
+  data.target_year:
+    values:
+      - 2012  
+
   # trainer.max_steps: 
   #   value: 10000
   #     # - 20000
