@@ -16,7 +16,8 @@ class FireSpreadDataModule(LightningDataModule):
                  load_from_hdf5: bool, num_workers: int, remove_duplicate_features: bool, 
                  is_pad: Optional[bool] = False,
                  features_to_keep: Union[Optional[List[int]], str] = None, return_doy: bool = False,
-                 data_fold_id: int = 0, non_outlier_indices_path: Optional[str] = None, filter_ignition_train: Optional[bool] = False, filter_ignition_val_test: Optional[bool] = False,  target_year: int = None,
+                 data_fold_id: int = 0, non_outlier_indices_path: Optional[str] = None, filter_ignition_train: Optional[bool] = False, filter_ignition_val_test: Optional[bool] = False,  target_year: int = None, source_year: int = None,
+
                  ignition_only_train: Optional[bool] = False, ignition_only_val_test: Optional[bool] = False, additional_data: Optional[bool] = False, *args, **kwargs):
         """_summary_ Data module for loading the WildfireSpreadTS dataset.
 
@@ -61,6 +62,8 @@ class FireSpreadDataModule(LightningDataModule):
         self.ignition_only_val_test = ignition_only_val_test
         self.additional_data = additional_data
         self.target_year = target_year
+        self.source_year = source_year
+
 
     def keep_ignition(self, dataset):
         ignition_indices = []
@@ -109,7 +112,11 @@ class FireSpreadDataModule(LightningDataModule):
         
     def setup(self, stage):
         train_years, val_years, test_years = self.split_fires(
-            self.data_fold_id, self.additional_data, self.target_year)
+            source_year=self.source_year,     # <-- correct year from sweep
+            additional_data=self.additional_data,
+            target_year=self.target_year
+        )
+
         self.train_dataset = FireSpreadDataset(data_dir=self.data_dir, included_fire_years=train_years,
                                                n_leading_observations=self.n_leading_observations,
                                                n_leading_observations_test_adjustment=None,

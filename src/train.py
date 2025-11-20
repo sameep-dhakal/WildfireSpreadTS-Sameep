@@ -85,6 +85,7 @@ class MyLightningCLI(LightningCLI):
         # -------------------------------
         # FETCH SOURCE YEAR CORRECTLY
         # -------------------------------
+        self.config.data.source_year = int(self.config.model.init_args.source_year)
         source_year = int(self.config.model.init_args.source_year)
 
         # compute pos_class_weight for THIS source_year
