@@ -68,7 +68,8 @@ class MyLightningCLI(LightningCLI):
 
         train_years, _, _ = FireSpreadDataModule.split_fires(
             self.config.data.data_fold_id,
-            self.config.data.additional_data
+            self.config.data.additional_data,
+            self.config.data.target_year
         )
         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
         fire_rate = 1 - missing_values_rates[-1]
