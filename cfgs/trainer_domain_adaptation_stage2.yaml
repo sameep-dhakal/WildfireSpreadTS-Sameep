@@ -8,14 +8,14 @@ logger:
   init_args:
     # Determined via argument linking in train.py
     # save_dir: ${fit.trainer.default_root_dir}
-    project: domain-adaptation-resnet50
+    project: wildfire-resnet18-domainadaptation-stage2-singleyear
     log_model: true
+
 enable_checkpointing: true
 callbacks: 
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
-      monitor: score_D_epoch
-      mode: min
+      monitor: train_loss
       save_on_train_epoch_end: true       
   
   # Always save last epoch

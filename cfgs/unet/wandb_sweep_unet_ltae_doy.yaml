@@ -51,29 +51,17 @@ parameters:
   data.return_doy:
     value: false
 
-  data.target_year:
-    values:
-      - 2012
-      - 2013
-      - 2014
-      - 2015
-      - 2016
-      - 2017
-      - 2018
-      - 2019
-      - 2020
-      - 2021
-      - 2022
-      - 2023
+  # trainer.max_steps: 
+  #   value: 10000
+  #     # - 20000
+  #     # - 30000
+  # do_validate:
+  #   value: false    
+  # do_test:
+  #   value: true
 
-
-  trainer.max_steps: 
-    value: 10000
-      # - 20000
-      # - 30000
-  do_validate:
-    value: false    
-  do_test:
+  do_train:
     value: true
+
 program: src/train.py
 

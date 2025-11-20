@@ -140,9 +140,15 @@ def main():
     )
     # cli.wandb_setup()
 
+    # if cli.config.do_train:
+    #     cli.trainer.fit(cli.model, cli.datamodule,
+    #                     ckpt_path=cli.config.ckpt_path)
+        
     if cli.config.do_train:
-        cli.trainer.fit(cli.model, cli.datamodule,
-                        ckpt_path=cli.config.ckpt_path)
+        print("\n⚡ Running IWAN Stage-2 manually (no trainer.fit)…\n")
+        cli.model.run_full_iwan(cli.datamodule)
+        return  # IMPORTANT: skip all Lightning testing/prediction
+    
 
     ckpt = cli.config.ckpt_path
     if cli.config.do_train:
