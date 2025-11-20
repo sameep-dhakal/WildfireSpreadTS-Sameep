@@ -23,6 +23,8 @@ parameters:
     value: 2012
   model.all_target_years: 
     values: [2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023]
+  model.save_dir:
+    value: "/develop/results/"
   
   
   data.data_fold_id:
