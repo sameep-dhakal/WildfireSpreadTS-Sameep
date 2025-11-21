@@ -675,7 +675,7 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         os.makedirs(save_dir, exist_ok=True)
         self.weight_file = os.path.join(
-            save_dir, f"train_{self.source_year}_test_all.h5"
+            save_dir, f"newtrain_{self.source_year}_test_all.h5"
         )
 
         # ------------------------------
@@ -874,9 +874,14 @@ class IWANStage2_WeightEstimator(BaseModel):
                 x_s = x_s.flatten(1, 2)
 
             f_s = self.encode(x_s)
+            # logits = disc(f_s)
+            # p = torch.sigmoid(logits)
+            # out.append(p.cpu())
+
             logits = disc(f_s)
-            p = torch.sigmoid(logits)
-            out.append(p.cpu())
+            D_star = torch.sigmoid(logits)   # probability of source
+            w = 1.0 - D_star 
+            out.append(w.cpu())                # IWAN importance weight
 
         weights = torch.cat(out, 0).numpy()
 
