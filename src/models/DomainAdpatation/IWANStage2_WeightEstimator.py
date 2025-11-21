@@ -793,7 +793,7 @@ class IWANStage2_WeightEstimator(BaseModel):
             n_leading_observations_test_adjustment=dm.n_leading_observations_test_adjustment,
             crop_side_length=dm.crop_side_length,
             load_from_hdf5=dm.load_from_hdf5,
-            is_train=False,
+            is_train=True,
             remove_duplicate_features=dm.remove_duplicate_features,
             features_to_keep=dm.features_to_keep,
             return_doy=dm.return_doy,
