@@ -19,7 +19,6 @@ parameters:
     value: models.SMPModel
   model.use_doy:
     value: false
-
   data.data_fold_id:
     values:
       - 0
@@ -34,6 +33,7 @@ parameters:
       - 9
       - 10
       - 11
+      - 12
 
   data.features_to_keep:
     values:
