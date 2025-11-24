@@ -6,7 +6,7 @@ command:
   - -c
   - cfgs/unet/res18_monotemporal.yaml
   - --trainer
-  - cfgs/trainer_domain_adaptation_stage2.yaml
+  - cfgs/trainer_single_gpu.yaml
   - --data
   - cfgs/data_monotemporal_full_features.yaml
   - ${args}
