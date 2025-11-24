@@ -1,4 +1,4 @@
-project: wildfire-resnet18-domainadaptation-stage2-singleyear
+project: wildfire-resnet18-domainadaptation-stage1-singleyearout
 command:
   - ${env}
   - python
@@ -16,31 +16,24 @@ metric:
   name: train_loss # Minimize the domain discriminator loss during weight estimation
 parameters:
   model.class_path:
-    value: models.DomainAdpatation.IWANStage2_WeightEstimator.IWANStage2_WeightEstimator
+    value: models.SMPModel
   model.use_doy:
     value: false
-  model.source_year:
-    values: [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2012, 2013, 2014, 2015, 2023]
-  model.all_target_years: 
-    value: [2012,2013,2014,2015,2016,2017,2018,2019,2020,2021,2022,2023]
-  model.save_dir:
-    value: "/develop/results/"
-  
-  
-  # data.data_fold_id:
-  #   values:
-  #     - 0
-  #     - 1
-  #     - 2
-  #     - 3
-  #     - 4
-  #     - 5
-  #     - 6
-  #     - 7
-  #     - 8
-  #     - 9
-  #     - 10
-  #     - 11
+
+  data.data_fold_id:
+    values:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+      - 7
+      - 8
+      - 9
+      - 10
+      - 11
 
   data.features_to_keep:
     values:
@@ -62,14 +55,14 @@ parameters:
     values:
       - 2012  
 
-  # trainer.max_steps: 
-  #   value: 10000
+  trainer.max_steps: 
+    value: 20000
   #     # - 20000
   #     # - 30000
-  # do_validate:
-  #   value: false    
-  # do_test:
-  #   value: true
+  do_validate:
+    value: false    
+  do_test:
+    value: false
 
   do_train:
     value: true
