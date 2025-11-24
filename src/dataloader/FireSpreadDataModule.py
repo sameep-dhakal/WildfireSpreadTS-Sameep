@@ -202,57 +202,8 @@ class FireSpreadDataModule(LightningDataModule):
                  (2019, 2021, 2020, 2018),
                  (2020, 2021, 2018, 2019),
                  (2020, 2021, 2019, 2018)]
-            train_years = list(folds[data_fold_id][:2])
-            val_years = list(folds[data_fold_id][2:3])
-            test_years = list(folds[data_fold_id][3:4])
-        
-        # else:
-        #     folds = [(2016, 2017, 2022, 2023, 2018, 2019, 2020, 2021),
-        #          (2016, 2017, 2022, 2023, 2018, 2019, 2021, 2020),
-        #          (2016, 2017, 2022, 2023, 2018, 2020, 2019, 2021),
-        #          (2016, 2017, 2022, 2023, 2018, 2020, 2021, 2019),
-        #          (2016, 2017, 2022, 2023, 2018, 2021, 2019, 2020),
-        #          (2016, 2017, 2022, 2023, 2018, 2021, 2020, 2019),
-        #          (2016, 2017, 2022, 2023, 2019, 2020, 2018, 2021),
-        #          (2016, 2017, 2022, 2023, 2019, 2020, 2021, 2018),
-        #          (2016, 2017, 2022, 2023, 2019, 2021, 2018, 2020),
-        #          (2016, 2017, 2022, 2023, 2019, 2021, 2020, 2018),
-        #          (2016, 2017, 2022, 2023, 2020, 2021, 2018, 2019),
-        #          (2016, 2017, 2022, 2023, 2020, 2021, 2019, 2018)]
-        #     train_years = list(folds[data_fold_id][:6])
-        #     val_years = list(folds[data_fold_id][6:7])
-        #     test_years = list(folds[data_fold_id][7:8])
 
         else:
-            # This fold structure exactly replicates the logic from the diagram (Figure 5),
-            # with the new years (2012-2015) added to every training set.
-            # The order is: [ 8 Training Years | 2 Validation Years | 2 Test Years ]
-            # folds = [
-            #     (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
-                
-            #     (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
-                
-            #     (2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2022, 2023, 2018, 2019),
-                
-            #     (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
-            # ]
-
-            # folds = [
-            #     ( 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
-
-            #     ( 2016, 2017, 2020, 2021, 2022, 2023, 2018, 2019),
-                
-            #     ( 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
-                
-            #     ( 2018, 2019, 2022, 2023, 2016, 2017, 2020, 2021)
-            # ]
-
-            
-            # # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
-            # train_years = list(folds[data_fold_id][:4])
-            # val_years   = list(folds[data_fold_id][4:6])
-            # test_years  = list(folds[data_fold_id][6:8])
-
                 # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
            # All years you have
             all_years = [2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
@@ -270,3 +221,61 @@ class FireSpreadDataModule(LightningDataModule):
             f"Using the following dataset split:\nTrain years: {train_years}, Val years: {val_years}, Test years: {test_years}")
 
         return train_years, val_years, test_years
+    
+
+
+    @staticmethod
+    def split_fires(data_fold_id,additional_data):
+        """_summary_ Split the years into train/val/test set.
+
+        Args:
+            data_fold_id (_type_): _description_ Index of the respective split to choose, see method body for details.
+
+        Returns:
+            _type_: _description_
+        """
+        if not additional_data:
+
+            folds = [(2018, 2019, 2020, 2021),
+                 (2018, 2019, 2021, 2020),
+                 (2018, 2020, 2019, 2021),
+                 (2018, 2020, 2021, 2019),
+                 (2018, 2021, 2019, 2020),
+                 (2018, 2021, 2020, 2019),
+                 (2019, 2020, 2018, 2021),
+                 (2019, 2020, 2021, 2018),
+                 (2019, 2021, 2018, 2020),
+                 (2019, 2021, 2020, 2018),
+                 (2020, 2021, 2018, 2019),
+                 (2020, 2021, 2019, 2018)]
+            train_years = list(folds[data_fold_id][:2])
+            val_years = list(folds[data_fold_id][2:3])
+            test_years = list(folds[data_fold_id][3:4])
+
+        else:
+            # This fold structure exactly replicates the logic from the diagram (Figure 5),
+            # with the new years (2012-2015) added to every training set.
+
+            folds = [
+                (2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023),
+                (2012, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023),
+                (2012, 2013, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023),
+                (2012, 2013, 2014, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023),
+                (2012, 2013, 2014, 2015, 2017, 2018, 2019, 2020, 2021, 2022, 2023),
+                (2012, 2013, 2014, 2015, 2016, 2018, 2019, 2020, 2021, 2022, 2023),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2019, 2020, 2021, 2022, 2023),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2020, 2021, 2022, 2023),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2021, 2022, 2023),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2022, 2023),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2023),
+                (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022)
+            ]
+
+            # # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
+            train_years = list(folds[data_fold_id][:11])
+            val_years   = list(folds[data_fold_id][1:1])
+            test_years  = list(folds[data_fold_id][1:1])
+        print(
+            f"Using the following dataset split:\nTrain years: {train_years}, Val years: {val_years}, Test years: {test_years}")
+
+        return train_years, val_years, test_years   
