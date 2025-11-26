@@ -627,7 +627,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         save_dir: Optional[str] = None,
 
         # training hyperparameters
-        inner_epochs: int = 100,
+        inner_epochs: int = 200,
         inner_steps_per_epoch: Optional[int] = None,
         lr: float = 5e-5,
 
@@ -674,9 +674,8 @@ class IWANStage2_WeightEstimator(BaseModel):
             self.all_target_years = [int(y) for y in all_target_years]
 
         os.makedirs(save_dir, exist_ok=True)
-        self.weight_file = os.path.join(
-            save_dir, f"newtrain_{self.source_year}_test_all.h5"
-        )
+        # Base path; final filenames will include target year
+        self.weight_file_base = save_dir
 
         # ------------------------------
         # LOAD STAGE-1 ENCODER
@@ -742,11 +741,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         source_loader = datamodule.train_dataloader()
         n_source = len(source_loader.dataset)
 
-        with h5py.File(self.weight_file, "a") as f:
-            if "sample_index" not in f:
-                f.create_dataset("sample_index",
-                                 data=list(range(n_source)),
-                                 compression="gzip")
+        # We will write one HDF5 per target year; no preallocation here
 
         # ---------------------------
         # TARGET-YEAR LOOP
@@ -775,7 +770,7 @@ class IWANStage2_WeightEstimator(BaseModel):
             )
 
         print("\n✅ Finished IWAN Stage-2")
-        print(f"📁 Saved all weights → {self.weight_file}")
+        print(f"📁 Saved all weights under: {self.weight_file_base}")
 
     # ============================================================
     # TARGET LOADER
@@ -885,10 +880,15 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         weights = torch.cat(out, 0).numpy()
 
-        with h5py.File(self.weight_file, "a") as f:
-            if f"w_{year}" in f:
-                del f[f"w_{year}"]
-            f.create_dataset(f"w_{year}",
-                             data=weights, compression="gzip")
+        # Save to per-target-year file
+        weight_file = os.path.join(
+            self.weight_file_base, f"allothertrain_test_{year}.h5"
+        )
+        with h5py.File(weight_file, "a") as f:
+            if "sample_index" not in f:
+                f.create_dataset("sample_index",
+                                 data=list(range(len(source_loader.dataset))),
+                                 compression="gzip")
+            f.create_dataset("w", data=weights, compression="gzip")
 
-        print(f"   💾 Saved weights → w_{year}")
+        print(f"   💾 Saved weights → {weight_file}")
