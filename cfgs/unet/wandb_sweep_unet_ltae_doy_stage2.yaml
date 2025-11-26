@@ -1,4 +1,4 @@
-project: wildfire-resnet18-domainadaptation-stage1-singleyearout
+project: wildfire-resnet18-domainadaptation-stage2-singleyearout
 command:
   - ${env}
   - python
