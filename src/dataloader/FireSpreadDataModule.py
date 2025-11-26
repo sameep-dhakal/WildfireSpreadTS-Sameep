@@ -111,9 +111,10 @@ class FireSpreadDataModule(LightningDataModule):
         return Subset(dataset, valid_indices)
         
     def setup(self, stage):
+        # `split_fires` expects (data_fold_id, additional_data)
         train_years, val_years, test_years = self.split_fires(
-            source_year=self.data_fold_id,     # <-- correct year from sweep
-            additional_data=self.additional_data,
+            self.data_fold_id,
+            self.additional_data,
         )
 
         self.train_dataset = FireSpreadDataset(data_dir=self.data_dir, included_fire_years=train_years,
