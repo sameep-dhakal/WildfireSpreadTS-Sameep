@@ -961,7 +961,7 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         # Save to per-target-year file
         weight_file = os.path.join(
-            self.weight_file_base, f"cnn_single_layerallothertrain_test_{year}.h5"
+            self.weight_file_base, f"single_layer_cnn_allothertrain_test_{year}.h5"
         )
         with h5py.File(weight_file, "a") as f:
             if "sample_index" not in f:
@@ -981,7 +981,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         os.makedirs(ckpt_dir, exist_ok=True)
 
         ckpt_path = os.path.join(
-            ckpt_dir, f"iwan_stage2_cnn_target_year{year}.ckpt"
+            ckpt_dir, f"iwan_stage2_CNN_layer_target_year{year}.ckpt"
         )
 
         torch.save({
