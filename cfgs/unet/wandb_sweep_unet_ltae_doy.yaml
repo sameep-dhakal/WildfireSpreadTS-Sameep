@@ -11,9 +11,9 @@ command:
   - cfgs/data_monotemporal_full_features.yaml
   - ${args}
 method: grid
-metric:
-  goal: maximize
-  name: val_avg_precision # Minimize the domain discriminator loss during weight estimation
+# metric:
+#   goal: maximize
+#   name: val_avg_precision # Minimize the domain discriminator loss during weight estimation
 
 parameters:
   model.class_path:
@@ -22,7 +22,7 @@ parameters:
     value: false
   data.data_fold_id:
     values:
-      - 0
+      # - 0
       - 1
       - 2
       - 3
