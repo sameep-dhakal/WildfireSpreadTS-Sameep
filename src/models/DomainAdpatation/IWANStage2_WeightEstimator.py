@@ -637,6 +637,42 @@ class DomainHead3x1024(nn.Module):
 
 
 
+class DomainheadCNN(nn.Module):
+    """
+    Multi-layer CNN domain discriminator on spatial feature maps.
+    Inspired by FCDiscriminator-style designs in UDA seg papers.
+    Input:  feature map (B, C, H, W) from encoder
+    Output: scalar logit per sample (B,)
+    """
+    def __init__(self, in_channels: int, base_channels: int = 256):
+        super().__init__()
+
+        c1 = base_channels
+        c2 = base_channels // 2
+        c3 = base_channels // 4
+
+        self.net = nn.Sequential(
+            nn.Conv2d(in_channels, c1, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(c1, c2, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(c2, c3, kernel_size=3, stride=1, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+
+            nn.Conv2d(c3, 1, kernel_size=3, stride=1, padding=1),
+        )
+
+    def forward(self, x):
+        # x: (B, C, H, W)
+        logits_map = self.net(x)          # (B, 1, H, W)
+        logits = logits_map.mean(dim=(2, 3))  # global average pool → (B,)
+        return logits
+
+
+
+
 # ============================================================
 # IWAN STAGE-2 — GPU OPTIMIZED
 # ============================================================
@@ -793,7 +829,7 @@ class IWANStage2_WeightEstimator(BaseModel):
                 print("⚠️ No data, skipping.")
                 continue
 
-            disc = DomainHead3x1024(self.feat_dim).to(device)
+            disc = DomainheadCNN(self.feat_dim).to(device)
             opt = torch.optim.Adam(disc.parameters(), lr=self.lr)
             scaler = torch.cuda.amp.GradScaler()
 
@@ -919,7 +955,7 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         # Save to per-target-year file
         weight_file = os.path.join(
-            self.weight_file_base, f"save1024_3_single_layerallothertrain_test_{year}.h5"
+            self.weight_file_base, f"cnn_single_layerallothertrain_test_{year}.h5"
         )
         with h5py.File(weight_file, "a") as f:
             if "sample_index" not in f:
@@ -939,7 +975,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         os.makedirs(ckpt_dir, exist_ok=True)
 
         ckpt_path = os.path.join(
-            ckpt_dir, f"iwan_stage2_1024_3_target_year{year}.ckpt"
+            ckpt_dir, f"iwan_stage2_cnn_target_year{year}.ckpt"
         )
 
         torch.save({
