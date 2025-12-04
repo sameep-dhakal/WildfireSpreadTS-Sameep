@@ -798,9 +798,15 @@ class IWANStage2_WeightEstimator(BaseModel):
     # ============================================================
     # ENCODER APPLY — OPTIMIZED
     # ============================================================
-    @torch.inference_mode()
+    # @torch.inference_mode()
+    # def encode(self, x):
+    #     return self.Fs(x)[-1]
+
     def encode(self, x):
-        return self.Fs(x)[-1]
+    # encoder is frozen already but we should NOT use inference_mode
+        with torch.no_grad():
+            f = self.Fs(x)[-1]
+        return f.clone()   # gives autograd-friendly tensor for CNN
 
     # ============================================================
     # MAIN ENTRY — GPU OPTIMIZED
