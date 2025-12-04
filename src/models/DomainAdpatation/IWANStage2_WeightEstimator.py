@@ -793,7 +793,7 @@ class IWANStage2_WeightEstimator(BaseModel):
                 print("⚠️ No data, skipping.")
                 continue
 
-            disc = DomainHead512(self.feat_dim).to(device)
+            disc = DomainHead3x1024(self.feat_dim).to(device)
             opt = torch.optim.Adam(disc.parameters(), lr=self.lr)
             scaler = torch.cuda.amp.GradScaler()
 
@@ -919,7 +919,7 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         # Save to per-target-year file
         weight_file = os.path.join(
-            self.weight_file_base, f"512_single_layerallothertrain_test_{year}.h5"
+            self.weight_file_base, f"save1024_3_single_layerallothertrain_test_{year}.h5"
         )
         with h5py.File(weight_file, "a") as f:
             if "sample_index" not in f:
@@ -939,7 +939,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         os.makedirs(ckpt_dir, exist_ok=True)
 
         ckpt_path = os.path.join(
-            ckpt_dir, f"iwan_stage2_target_year{year}.ckpt"
+            ckpt_dir, f"iwan_stage2_1024_3_target_year{year}.ckpt"
         )
 
         torch.save({
