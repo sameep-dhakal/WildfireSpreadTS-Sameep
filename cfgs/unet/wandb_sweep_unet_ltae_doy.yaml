@@ -1,4 +1,4 @@
-project: wildfire-resnet18-domainadaptation-stage1-singleyearout
+project: wildfire-resnet18-wsts++_train_val_only
 command:
   - ${env}
   - python
@@ -25,15 +25,15 @@ parameters:
       - 1
       - 2
       - 3
-      - 4
-      - 5
-      - 6
-      - 7
-      - 8
-      - 9
-      - 10
-      - 11
-      - 12
+      # - 4
+      # - 5
+      # - 6
+      # - 7
+      # - 8
+      # - 9
+      # - 10
+      # - 11
+      # - 12
 
   data.features_to_keep:
     values:
@@ -43,7 +43,7 @@ parameters:
   data.n_leading_observations:
     values:
       - 1
-      # - 5
+      - 5
   data.remove_duplicate_features:
     value: true    #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
