@@ -12,8 +12,9 @@ command:
   - ${args}
 method: grid
 metric:
-  goal: minimize
-  name: train_loss # Minimize the domain discriminator loss during weight estimation
+  goal: maximize
+  name: val_avg_precision # Minimize the domain discriminator loss during weight estimation
+
 parameters:
   model.class_path:
     value: models.SMPModel
@@ -43,7 +44,7 @@ parameters:
   data.n_leading_observations:
     values:
       - 1
-      - 5
+      # - 5
   data.remove_duplicate_features:
     value: true    #While using UTAE we do not remove duplicate features else will get type mismatch because TCHW <-> (B, C, T, H, W) is combined to (B, C*T, H, W)
   data.additional_data:
