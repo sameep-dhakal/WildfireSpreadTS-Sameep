@@ -600,6 +600,21 @@ class DomainLogitHead(nn.Module):
         return self.net(x).squeeze(1)
 
 
+class DomainHead512(nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, 512),
+            nn.ReLU(inplace=True),
+            nn.Linear(512, 1),
+        )
+
+    def forward(self, x):
+        return self.net(x).squeeze(1)       
+
+
 # ============================================================
 # IWAN STAGE-2 — GPU OPTIMIZED
 # ============================================================
@@ -756,7 +771,7 @@ class IWANStage2_WeightEstimator(BaseModel):
                 print("⚠️ No data, skipping.")
                 continue
 
-            disc = DomainLogitHead(self.feat_dim).to(device)
+            disc = DomainHead512(self.feat_dim).to(device)
             opt = torch.optim.Adam(disc.parameters(), lr=self.lr)
             scaler = torch.cuda.amp.GradScaler()
 
@@ -882,7 +897,7 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         # Save to per-target-year file
         weight_file = os.path.join(
-            self.weight_file_base, f"allothertrain_test_{year}.h5"
+            self.weight_file_base, f"512_single_layerallothertrain_test_{year}.h5"
         )
         with h5py.File(weight_file, "a") as f:
             if "sample_index" not in f:
