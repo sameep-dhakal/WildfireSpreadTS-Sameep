@@ -615,6 +615,28 @@ class DomainHead512(nn.Module):
         return self.net(x).squeeze(1)       
 
 
+class DomainHead3x1024(nn.Module):
+    def __init__(self, in_channels: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(in_channels, 1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.1),
+
+            nn.Linear(1024, 1024),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.1),
+
+            nn.Linear(1024, 1),
+        )
+
+    def forward(self, x):
+        return self.net(x).squeeze(1)
+
+
+
 # ============================================================
 # IWAN STAGE-2 — GPU OPTIMIZED
 # ============================================================
@@ -907,3 +929,25 @@ class IWANStage2_WeightEstimator(BaseModel):
             f.create_dataset("w", data=weights, compression="gzip")
 
         print(f"   💾 Saved weights → {weight_file}")
+
+
+        # --------------------------------------------------------
+        # NEW: SAVE CHECKPOINT TO LIGHTNING DEFAULT CHECKPOINT DIR
+        # --------------------------------------------------------
+        # Lightning always creates a ModelCheckpoint callback
+        # We use its directory for stage2 .ckpt files
+        ckpt_dir = self.trainer.checkpoint_callback.dirpath
+        os.makedirs(ckpt_dir, exist_ok=True)
+
+        ckpt_path = os.path.join(
+            ckpt_dir, f"iwan_stage2_target_year{year}.ckpt"
+        )
+
+        torch.save({
+            "discriminator": disc.state_dict(),
+            "feat_dim": self.feat_dim,
+            "target_year": year,
+            "source_year": self.source_year,
+        }, ckpt_path)
+
+        print(f"   📌 Saved checkpoint → {ckpt_path}")
