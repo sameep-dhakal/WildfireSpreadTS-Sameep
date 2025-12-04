@@ -934,9 +934,8 @@ class IWANStage2_WeightEstimator(BaseModel):
         # --------------------------------------------------------
         # NEW: SAVE CHECKPOINT TO LIGHTNING DEFAULT CHECKPOINT DIR
         # --------------------------------------------------------
-        # Lightning always creates a ModelCheckpoint callback
-        # We use its directory for stage2 .ckpt files
-        ckpt_dir = self.trainer.checkpoint_callback.dirpath
+        # Save stage-2 checkpoints inside save_dir/stage2_checkpoints
+        ckpt_dir = os.path.join(self.weight_file_base, "stage2_checkpoints")
         os.makedirs(ckpt_dir, exist_ok=True)
 
         ckpt_path = os.path.join(
@@ -950,4 +949,5 @@ class IWANStage2_WeightEstimator(BaseModel):
             "source_year": self.source_year,
         }, ckpt_path)
 
-        print(f"   📌 Saved checkpoint → {ckpt_path}")
+        print(f"   📌 Saved Stage-2 checkpoint → {ckpt_path}")
+
