@@ -701,10 +701,10 @@ class IWANStage2_WeightEstimator(BaseModel):
         save_dir: Optional[str] = None,
 
         # training hyperparameters
-        inner_epochs: int = 200,
+        inner_epochs: int = 150,
         inner_steps_per_epoch: Optional[int] = None,
         lr: float = 5e-5,
-        early_stopping_patience: int = 10,
+        early_stopping_patience: int = 30,
 
         **kwargs,
     ):
@@ -817,8 +817,15 @@ class IWANStage2_WeightEstimator(BaseModel):
     def run_full_iwan(self, datamodule):
         # Ensure a wandb run exists (manual loop, no Lightning trainer)
         if wandb.run is None:
-            wandb.init(project="wildfire-resnet18-domainadaptation-stage2-singleyearout-cnnsinglelayer",
+            wandb.init(project="wildfire-resnet18-domainadaptation-stage2-singleyearout-1024singlelayer",
                        config=self.hparams)
+        # Define step/metric mapping so charts use epoch instead of trainer/global_step
+        wandb.define_metric("epoch")
+        wandb.define_metric("train_loss_D", step_metric="epoch")
+        wandb.define_metric("val_loss_D", step_metric="epoch")
+        wandb.define_metric("train_acc_D", step_metric="epoch")
+        wandb.define_metric("val_acc_D", step_metric="epoch")
+        wandb.define_metric("target_year", step_metric="epoch")
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(device)
@@ -852,7 +859,7 @@ class IWANStage2_WeightEstimator(BaseModel):
             )
 
             history = []
-            disc = DomainheadCNN(self.feat_dim).to(device)
+            disc = DomainHead3x1024(self.feat_dim).to(device)
             opt = torch.optim.Adam(disc.parameters(), lr=self.lr)
             scaler = torch.cuda.amp.GradScaler()
 
