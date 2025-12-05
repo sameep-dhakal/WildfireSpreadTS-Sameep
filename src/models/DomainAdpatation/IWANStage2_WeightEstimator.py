@@ -704,6 +704,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         inner_epochs: int = 200,
         inner_steps_per_epoch: Optional[int] = None,
         lr: float = 5e-5,
+        early_stopping_patience: int = 10,
 
         **kwargs,
     ):
@@ -740,6 +741,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         self.inner_epochs = int(inner_epochs)
         self.inner_steps_per_epoch = inner_steps_per_epoch
         self.lr = lr
+        self.early_stopping_patience = int(early_stopping_patience)
 
         # target list
         if all_target_years is None:
@@ -813,6 +815,11 @@ class IWANStage2_WeightEstimator(BaseModel):
     # MAIN ENTRY — GPU OPTIMIZED
     # ============================================================
     def run_full_iwan(self, datamodule):
+        # Ensure a wandb run exists (manual loop, no Lightning trainer)
+        if wandb.run is None:
+            wandb.init(project="wildfire-resnet18-domainadaptation-stage2-singleyearout-cnnsinglelayer",
+                       config=self.hparams)
+
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(device)
         print(f"🟢 Using device: {device}")
@@ -909,6 +916,10 @@ class IWANStage2_WeightEstimator(BaseModel):
         s_iter = cycle(src_loader)
         t_iter = cycle(tgt_loader)
 
+        best_val = float("inf")
+        best_state = None
+        epochs_no_improve = 0
+
         for ep in range(self.inner_epochs):
             total_loss = 0
             correct_s = correct_t = 0
@@ -976,11 +987,25 @@ class IWANStage2_WeightEstimator(BaseModel):
                     "val_acc_D": val_acc,
                     "target_year": target_year,
                     "epoch": ep + 1,
-                })
+                }, step=ep + 1)
             except Exception:
                 pass
 
             print(f"   Epoch {ep+1}/{self.inner_epochs} – train_loss={train_loss:.4f} val_loss={val_loss_value:.4f} train_acc={train_acc:.4f} val_acc={(val_acc if val_acc is not None else float('nan')):.4f}")
+
+            # track best and early stop
+            if val_loss_value < best_val:
+                best_val = val_loss_value
+                best_state = {k: v.detach().cpu().clone() for k, v in disc.state_dict().items()}
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve >= self.early_stopping_patience:
+                    print(f"   ⏹️ Early stopping at epoch {ep+1} (no improvement for {self.early_stopping_patience} epochs)")
+                    break
+
+        if best_state is not None:
+            disc.load_state_dict(best_state)
 
     # ============================================================
     # SAVE IWAN WEIGHTS — GPU FAST
