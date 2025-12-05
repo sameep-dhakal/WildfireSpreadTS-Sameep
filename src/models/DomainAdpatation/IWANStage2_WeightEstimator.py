@@ -569,6 +569,7 @@ import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
 import h5py
+import wandb
 
 from torch.utils.data import DataLoader
 from itertools import cycle
@@ -835,17 +836,28 @@ class IWANStage2_WeightEstimator(BaseModel):
                 print("⚠️ No data, skipping.")
                 continue
 
+            # simple source/target train-val split AFTER labeling
+            src_train_loader, src_val_loader = self._split_loader(
+                source_loader, datamodule.batch_size, datamodule.num_workers, datamodule, is_source=True
+            )
+            tgt_train_loader, tgt_val_loader = self._split_loader(
+                target_loader, datamodule.batch_size, datamodule.num_workers, datamodule, is_source=False
+            )
+
+            history = []
             disc = DomainheadCNN(self.feat_dim).to(device)
             opt = torch.optim.Adam(disc.parameters(), lr=self.lr)
             scaler = torch.cuda.amp.GradScaler()
 
             self._train_one_pair(
                 disc, opt, scaler,
-                source_loader, target_loader, device
+                src_train_loader, tgt_train_loader,
+                src_val_loader, tgt_val_loader,
+                device, target_year, history
             )
 
             self._save_weights_for_year(
-                disc, source_loader, device, target_year
+                disc, source_loader, device, target_year, history
             )
 
         print("\n✅ Finished IWAN Stage-2")
@@ -888,17 +900,19 @@ class IWANStage2_WeightEstimator(BaseModel):
     # TRAIN ONE PAIR — AMP + GPU FAST
     # ============================================================
     def _train_one_pair(self, disc, opt, scaler,
-                        source_loader, target_loader, device):
+                        src_loader, tgt_loader, src_val_loader, tgt_val_loader, device, target_year, history):
 
-        steps = min(len(source_loader), len(target_loader))
+        steps = min(len(src_loader), len(tgt_loader))
         if self.inner_steps_per_epoch:
             steps = min(steps, self.inner_steps_per_epoch)
 
-        s_iter = cycle(source_loader)
-        t_iter = cycle(target_loader)
+        s_iter = cycle(src_loader)
+        t_iter = cycle(tgt_loader)
 
         for ep in range(self.inner_epochs):
             total_loss = 0
+            correct_s = correct_t = 0
+            total_s = total_t = 0
 
             for _ in range(steps):
                 x_s, _ = next(s_iter)
@@ -925,20 +939,54 @@ class IWANStage2_WeightEstimator(BaseModel):
                     loss = 0.5 * self.bce(log_s, y_s) + \
                            0.5 * self.bce(log_t, y_t)
 
+                    p_s = (torch.sigmoid(log_s) > 0.5).float()
+                    p_t = (torch.sigmoid(log_t) < 0.5).float()
+
                 opt.zero_grad(set_to_none=True)
                 scaler.scale(loss).backward()
                 scaler.step(opt)
                 scaler.update()
 
                 total_loss += loss.item()
+                correct_s += p_s.sum().item()
+                correct_t += p_t.sum().item()
+                total_s += p_s.numel()
+                total_t += p_t.numel()
 
-            print(f"   Epoch {ep+1}/{self.inner_epochs} – loss={total_loss/steps:.4f}")
+            train_loss = total_loss / steps
+            val_loss_value, val_acc = self._eval_pair(disc, src_val_loader, tgt_val_loader, device)
+
+            train_acc = 0.5 * ((correct_s / max(1, total_s)) + (correct_t / max(1, total_t)))
+
+            history.append({
+                "epoch": ep + 1,
+                "train_loss": train_loss,
+                "val_loss": val_loss_value,
+                "train_acc": train_acc,
+                "val_acc": val_acc,
+                "target_year": target_year,
+            })
+
+            # log to wandb if available
+            try:
+                wandb.log({
+                    "train_loss_D": train_loss,
+                    "val_loss_D": val_loss_value,
+                    "train_acc_D": train_acc,
+                    "val_acc_D": val_acc,
+                    "target_year": target_year,
+                    "epoch": ep + 1,
+                })
+            except Exception:
+                pass
+
+            print(f"   Epoch {ep+1}/{self.inner_epochs} – train_loss={train_loss:.4f} val_loss={val_loss_value:.4f} train_acc={train_acc:.4f} val_acc={(val_acc if val_acc is not None else float('nan')):.4f}")
 
     # ============================================================
     # SAVE IWAN WEIGHTS — GPU FAST
     # ============================================================
     @torch.inference_mode()
-    def _save_weights_for_year(self, disc, source_loader, device, year):
+    def _save_weights_for_year(self, disc, source_loader, device, year, history):
         disc.eval()
         out = []
 
@@ -961,7 +1009,7 @@ class IWANStage2_WeightEstimator(BaseModel):
 
         # Save to per-target-year file
         weight_file = os.path.join(
-            self.weight_file_base, f"single_layer_cnn_allothertrain_test_{year}.h5"
+            self.weight_file_base, f"single_layer_cnnmodel_allothertrain_test_{year}.h5"
         )
         with h5py.File(weight_file, "a") as f:
             if "sample_index" not in f:
@@ -981,7 +1029,7 @@ class IWANStage2_WeightEstimator(BaseModel):
         os.makedirs(ckpt_dir, exist_ok=True)
 
         ckpt_path = os.path.join(
-            ckpt_dir, f"iwan_stage2_CNN_layer_target_year{year}.ckpt"
+            ckpt_dir, f"iwan_stage2_CNNmodel_target_year{year}.ckpt"
         )
 
         torch.save({
@@ -989,7 +1037,68 @@ class IWANStage2_WeightEstimator(BaseModel):
             "feat_dim": self.feat_dim,
             "target_year": year,
             "source_year": self.source_year,
+            "history": history,
         }, ckpt_path)
 
         print(f"   📌 Saved Stage-2 checkpoint → {ckpt_path}")
 
+    @torch.inference_mode()
+    def _eval_pair(self, disc, src_loader, tgt_loader, device):
+        total_loss = 0.0
+        total_count = 0
+        correct_s = correct_t = 0
+        total_s = total_t = 0
+        # source: label 1
+        for x_s, _ in src_loader:
+            x_s = x_s.to(device, non_blocking=True)
+            if x_s.ndim == 5:
+                x_s = x_s.flatten(1, 2)
+            f_s = self.encode(x_s)
+            log_s = disc(f_s)
+            y_s = torch.ones_like(log_s, device=device)
+            loss = 0.5 * self.bce(log_s, y_s)
+            total_loss += loss.item() * x_s.size(0)
+            total_count += x_s.size(0)
+            p_s = (torch.sigmoid(log_s) > 0.5).float()
+            correct_s += p_s.sum().item()
+            total_s += p_s.numel()
+        # target: label 0
+        for x_t, _ in tgt_loader:
+            x_t = x_t.to(device, non_blocking=True)
+            if x_t.ndim == 5:
+                x_t = x_t.flatten(1, 2)
+            f_t = self.encode(x_t)
+            log_t = disc(f_t)
+            y_t = torch.zeros_like(log_t, device=device)
+            loss = 0.5 * self.bce(log_t, y_t)
+            total_loss += loss.item() * x_t.size(0)
+            total_count += x_t.size(0)
+            p_t = (torch.sigmoid(log_t) < 0.5).float()
+            correct_t += p_t.sum().item()
+            total_t += p_t.numel()
+
+        val_loss = total_loss / max(1, total_count)
+        val_acc = 0.5 * ((correct_s / max(1, total_s)) + (correct_t / max(1, total_t)))
+        return val_loss, val_acc
+
+    # --------------------------------------------------------
+    # HELPERS
+    # --------------------------------------------------------
+    def _split_loader(self, loader, batch_size, num_workers, datamodule, is_source: bool):
+        # Take a small validation split from an existing loader’s dataset
+        ds = loader.dataset
+        total_len = len(ds)
+        val_len = max(1, int(0.1 * total_len))
+        train_len = max(1, total_len - val_len)
+        gen = torch.Generator().manual_seed(42)
+        train_ds, val_ds = torch.utils.data.random_split(ds, [train_len, val_len], generator=gen)
+
+        train_loader = DataLoader(
+            train_ds, batch_size=batch_size, shuffle=True,
+            num_workers=num_workers, pin_memory=True, persistent_workers=True
+        )
+        val_loader = DataLoader(
+            val_ds, batch_size=batch_size, shuffle=False,
+            num_workers=num_workers, pin_memory=True, persistent_workers=True
+        )
+        return train_loader, val_loader

@@ -15,8 +15,11 @@ enable_checkpointing: true
 callbacks: 
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
-      monitor: train_loss
-      save_on_train_epoch_end: true       
+      monitor: val_loss_D
+      mode: min
+      save_top_k: 1
+      save_last: false
+      filename: "best-{epoch:02d}-{val_loss_D:.4f}"
   
   # Always save last epoch
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
@@ -31,13 +34,13 @@ max_steps: -1
 min_steps: -1
 max_time: null
 limit_train_batches: null
-limit_val_batches: 0
+limit_val_batches: 1.0
 limit_test_batches: null
 limit_predict_batches: null
 overfit_batches: 0.0 # off
 val_check_interval: null
-check_val_every_n_epoch: 0
-num_sanity_val_steps: 0
+check_val_every_n_epoch: 1
+num_sanity_val_steps: 1
 log_every_n_steps: null
 enable_progress_bar: true
 enable_model_summary: null
