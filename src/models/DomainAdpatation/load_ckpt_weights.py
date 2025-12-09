@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import h5py
@@ -9,20 +10,20 @@ from dataloader.FireSpreadDataset import FireSpreadDataset
 from models.DomainAdpatation.IWANStage2_WeightEstimator.DomainHead3x1024 import DomainHead3x1024
 
 
-# -----------------------------
-# Extract the true fire year per sample
-# -----------------------------
+# -----------------------------------------------------------
+# Extract true fire year for each sample in the dataset
+# -----------------------------------------------------------
 def get_source_years(dataset):
     years = []
     for i in range(len(dataset)):
         yr, _, _ = dataset.find_image_index_from_dataset_index(i)
-        years.append(yr)
+        years.append(int(yr))
     return np.array(years, dtype=int)
 
 
-# -----------------------------
-# Export function
-# -----------------------------
+# -----------------------------------------------------------
+# Export IWAN Stage-2 weights for a fold
+# -----------------------------------------------------------
 def export_weights_for_fold(
     fold,
     stage1_ckpt_dir,
@@ -33,50 +34,51 @@ def export_weights_for_fold(
     num_workers=4,
     device="cuda"
 ):
-    print(f"=== Fold {fold} ===")
-    print(f"Stage-1 ckpt dir: {stage1_ckpt_dir}")
-    print(f"Stage-2 ckpt:     {stage2_ckpt_path}")
+    print(f"\n==============================")
+    print(f"🔥 Fold {fold}")
+    print(f"Stage-1 ckpt dir:   {stage1_ckpt_dir}")
+    print(f"Stage-2 checkpoint: {stage2_ckpt_path}")
+    print("==============================\n")
 
-    # -----------------------------
-    # Load Stage-1 encoder
-    # -----------------------------
-    ckpts = [f for f in torch.listdir(stage1_ckpt_dir) if f.endswith(".ckpt")]
+    # Load Stage-1 ckpt file
+    ckpts = [f for f in os.listdir(stage1_ckpt_dir) if f.endswith(".ckpt")]
     if len(ckpts) == 0:
         raise RuntimeError(f"No checkpoint found in {stage1_ckpt_dir}")
-    stage1_ckpt = f"{stage1_ckpt_dir}/{ckpts[0]}"
 
+    stage1_ckpt = os.path.join(stage1_ckpt_dir, ckpts[0])
+    print(f"Using Stage-1 ckpt: {stage1_ckpt}")
+
+    # Load Stage-1 SMP Model
     base = SMPModel.load_from_checkpoint(stage1_ckpt)
     encoder = base.model.encoder
     encoder.to(device)
     encoder.eval()
 
-    # -----------------------------
     # Load Stage-2 discriminator
-    # -----------------------------
     ckpt2 = torch.load(stage2_ckpt_path, map_location=device)
     feat_dim = ckpt2["feat_dim"]
     target_year = ckpt2["target_year"]
+
+    print(f"Target year for fold {fold}: {target_year}")
 
     disc = DomainHead3x1024(feat_dim).to(device)
     disc.load_state_dict(ckpt2["discriminator"])
     disc.eval()
 
-    # -----------------------------
-    # Build multi-year source dataset
-    # using YEARS 2012–2023 (modify if needed)
-    # -----------------------------
-    source_years = list(range(2012, 2024))
+    # Build full multi-year source dataset
+    all_source_years = list(range(2012, 2024))  # 2012–2023
+
     source_dataset = FireSpreadDataset(
         data_dir=data_dir,
-        included_fire_years=source_years,
+        included_fire_years=all_source_years,
         n_leading_observations=2,
         crop_side_length=128,
         load_from_hdf5=True,
         is_train=False,
         remove_duplicate_features=True,
-        stats_years=source_years,
+        stats_years=all_source_years,
         features_to_keep=None,
-        return_doy=False
+        return_doy=False,
     )
 
     src_loader = DataLoader(
@@ -84,53 +86,54 @@ def export_weights_for_fold(
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=True,
     )
 
-    # -----------------------------
-    # Get true source year per sample
-    # -----------------------------
+    # True year for every sample
+    print("Extracting src_year array...")
     src_years = get_source_years(source_dataset)
 
-    # -----------------------------
-    # Compute weights
-    # -----------------------------
+    # Compute IWAN weights
+    print("Computing importance weights…")
     weights = []
     with torch.no_grad():
-        for x, _ in tqdm(src_loader, desc=f"Computing for target {target_year}"):
+        for x, _ in tqdm(src_loader):
             if x.ndim == 5:
                 x = x.flatten(1, 2)
             x = x.to(device)
 
             feats = encoder(x)[-1]
-            D = torch.sigmoid(disc(feats))
-            w = 1.0 - D
+            logits = disc(feats)
+            D = torch.sigmoid(logits)      # probability sample is SOURCE
+            w = 1.0 - D                    # importance weight
 
             weights.append(w.cpu().numpy())
 
     weights = np.concatenate(weights, axis=0)
 
-    # -----------------------------
-    # Save output H5
-    # -----------------------------
-    out_path = f"{save_dir}/weights_srcyears_target_{target_year}.h5"
+    # Save HDF5
+    out_path = os.path.join(save_dir, f"weights_srcyears_target_{target_year}.h5")
+    os.makedirs(save_dir, exist_ok=True)
+
+    print(f"Saving → {out_path}")
+
     with h5py.File(out_path, "w") as f:
         n = len(source_dataset)
-
         f.create_dataset("sample_index", data=np.arange(n), compression="gzip")
         f.create_dataset("w", data=weights, compression="gzip")
         f.create_dataset("src_year", data=src_years, compression="gzip")
-
         f.attrs["target_year"] = int(target_year)
 
-    print(f"Saved → {out_path}")
+    print(f"✅ Finished fold {fold}: saved {out_path}")
 
 
-# -----------------------------
-# Main loop for all folds
-# -----------------------------
+# -----------------------------------------------------------
+# MAIN — fold loop
+# -----------------------------------------------------------
 if __name__ == "__main__":
-    STAGE1_DIR = {
+    print("🚀 Starting Stage-2 weight export job...")
+
+    STAGE1_CKPT_DIR = {
         0: "/develop/results/wildfire-progression/gvuu0kii/checkpoints",
         1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
         2: "/develop/results/wildfire-progression/zsqvrj9f/checkpoints",
@@ -146,7 +149,7 @@ if __name__ == "__main__":
         12: "/develop/results/wildfire-progression/o7t67rsw/checkpoints",
     }
 
-    STAGE2_CKPT = {
+    STAGE2_CKPT_DIR = {
         0: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2012.ckpt",
         1: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
         2: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2014.ckpt",
@@ -164,11 +167,13 @@ if __name__ == "__main__":
     DATA_DIR = "/develop/data/WildfireSpreadTS_2012_2015_hdf5/"
     SAVE_DIR = "/develop/results/stage2_weight_exports/"
 
-    for fold in STAGE1_DIR:
+    for fold in STAGE1_CKPT_DIR:
         export_weights_for_fold(
             fold=fold,
-            stage1_ckpt_dir=STAGE1_DIR[fold],
-            stage2_ckpt_path=STAGE2_CKPT[fold],
+            stage1_ckpt_dir=STAGE1_CKPT_DIR[fold],
+            stage2_ckpt_path=STAGE2_CKPT_DIR[fold],
             data_dir=DATA_DIR,
             save_dir=SAVE_DIR,
         )
+
+    print("\n🎉 ALL FOLDS COMPLETED SUCCESSFULLY!")
