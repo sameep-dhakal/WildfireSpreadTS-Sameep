@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from models.SMPModel import SMPModel
 from dataloader.FireSpreadDataset import FireSpreadDataset
-from models.DomainAdpatation.IWANStage2_WeightEstimator import DomainHeadCNN
+from models.DomainAdpatation.IWANStage2_WeightEstimator import DomainheadCNN
 
 
 
