@@ -10,38 +10,30 @@ from dataloader.FireSpreadDataset import FireSpreadDataset
 from models.DomainAdpatation.IWANStage2_WeightEstimator import DomainHead3x1024
 
 
-
-# =====================================================================
-# Inspect checkpoints (optional helper)
-# =====================================================================
+# --------------------------------------------------------------------
+# Utility: inspect checkpoint (optional)
+# --------------------------------------------------------------------
 def inspect_checkpoint(ckpt_path):
-    print("\n========================================")
-    print(f"🔍 Inspecting checkpoint:\n{ckpt_path}")
-    print("========================================")
-
+    print("\n=== Inspecting checkpoint:", ckpt_path, "===")
     ckpt = torch.load(ckpt_path, map_location="cpu")
 
     if "discriminator" not in ckpt:
-        print("❌ No 'discriminator' key in checkpoint!")
+        print("❌ Missing 'discriminator' key!")
         print("Available keys:", ckpt.keys())
         return
 
-    disc_state = ckpt["discriminator"]
+    print("Discriminator weights:")
+    for k, v in ckpt["discriminator"].items():
+        print(f"  {k:30s}  {tuple(v.shape)}")
 
-    print("\n📌 Discriminator State Dict Keys:")
-    for k, v in disc_state.items():
-        print(f"  {k:40s} {tuple(v.shape)}")
-
-    print("\n🎯 Feature Dim:", ckpt.get("feat_dim", "NOT FOUND"))
-    print("🎯 Target Year:", ckpt.get("target_year", "NOT FOUND"))
-
+    print("feat_dim:", ckpt.get("feat_dim"))
+    print("target_year:", ckpt.get("target_year"))
     print("========================================\n")
 
 
-
-# =====================================================================
-# Extract true fire year for each sample in the dataset
-# =====================================================================
+# --------------------------------------------------------------------
+# Extract source years from dataset
+# --------------------------------------------------------------------
 def get_source_years(dataset):
     years = []
     for i in range(len(dataset)):
@@ -50,10 +42,9 @@ def get_source_years(dataset):
     return np.array(years, dtype=int)
 
 
-
-# =====================================================================
-# EXPORT FUNCTION — FINAL, CORRECTED, 7-CHANNEL CONSISTENT
-# =====================================================================
+# --------------------------------------------------------------------
+# MAIN EXPORT FUNCTION (WORKING VERSION)
+# --------------------------------------------------------------------
 def export_weights_for_fold(
     fold,
     stage1_ckpt_dir,
@@ -64,77 +55,87 @@ def export_weights_for_fold(
     num_workers=4,
     device="cuda"
 ):
+
     print("\n==============================")
-    print(f"🔥 Exporting Stage-2 Weights: Fold {fold}")
-    print(f"Stage-1 ckpt dir:   {stage1_ckpt_dir}")
-    print(f"Stage-2 checkpoint: {stage2_ckpt_path}")
+    print(f"🔥 Exporting Fold {fold}")
+    print("Stage-1 dir:", stage1_ckpt_dir)
+    print("Stage-2 ckpt:", stage2_ckpt_path)
     print("==============================\n")
 
-    # ---------------------------------------------------
-    # Load Stage-1 segmentation model
-    # ---------------------------------------------------
+    # ----------------------------------------------------------
+    # Load Stage-1 encoder
+    # ----------------------------------------------------------
     ckpts = [f for f in os.listdir(stage1_ckpt_dir) if f.endswith(".ckpt")]
-    if len(ckpts) == 0:
-        raise RuntimeError(f"No checkpoint found in {stage1_ckpt_dir}")
+    if not ckpts:
+        raise RuntimeError(f"No Stage-1 checkpoint found in {stage1_ckpt_dir}")
 
     stage1_ckpt = os.path.join(stage1_ckpt_dir, ckpts[0])
-    print(f"Using Stage-1 ckpt: {stage1_ckpt}")
+    print("Using Stage-1:", stage1_ckpt)
 
     base = SMPModel.load_from_checkpoint(stage1_ckpt)
-    encoder = base.model.encoder
-    encoder.to(device)
+    encoder = base.model.encoder.to(device)
     encoder.eval()
 
-    # Stage-1 true input channels (should be 7)
-    true_stage1_in_channels = base.hparams.n_channels
-    print(f"Stage-1 expected input channels = {true_stage1_in_channels}")
+    stage1_channels = base.hparams.n_channels
+    print(f"Stage-1 model expects {stage1_channels} input channels")
 
-    # ---------------------------------------------------
+    # ----------------------------------------------------------
     # Load Stage-2 discriminator
-    # ---------------------------------------------------
+    # ----------------------------------------------------------
     ckpt2 = torch.load(stage2_ckpt_path, map_location=device)
     feat_dim = ckpt2["feat_dim"]
     target_year = ckpt2["target_year"]
-
-    print(f"Target year for fold {fold}: {target_year}")
 
     disc = DomainHead3x1024(feat_dim).to(device)
     disc.load_state_dict(ckpt2["discriminator"])
     disc.eval()
 
-    # ---------------------------------------------------
-    # BUILD DATASET EXACTLY LIKE STAGE-1
-    # MUST output 7 channels
-    # ---------------------------------------------------
-    features_to_keep = [0, 1, 2, 3, 4, 38, 39]  # EXACT STAGE-1 FEATURES
+    print(f"Target year for this fold = {target_year}")
+    print(f"Feature dimension = {feat_dim}")
+
+    # ----------------------------------------------------------
+    # Build dataset matching Stage-1 preprocessing EXACTLY
+    # ----------------------------------------------------------
+    # Stage-1 used:
+    #   n_leading_observations = 1
+    #   features_to_keep = [0,1,2,3,4,38,39]
+    #   remove_duplicate_features = False (because T=1)
+    #   return_doy = False
+    #   stats_years = Stage-1 train years → we use all 2012–2023
+    # ----------------------------------------------------------
+
+    FEATURES = [0, 1, 2, 3, 4, 38, 39]
 
     source_dataset = FireSpreadDataset(
         data_dir=data_dir,
         included_fire_years=list(range(2012, 2024)),
-        n_leading_observations=1,   # Stage-1 was monotemporal
+        n_leading_observations=1,
+        n_leading_observations_test_adjustment=None,
         crop_side_length=128,
         load_from_hdf5=True,
         is_train=False,
-
-        # CRITICAL: identical preprocessing to Stage-1
-        remove_duplicate_features=True,
-        features_to_keep=features_to_keep,
-        additional_data=True,
+        remove_duplicate_features=False,     # <<< important (T=1)
+        features_to_keep=FEATURES,
         return_doy=False,
+        stats_years=list(range(2012, 2024)),
+        is_pad=False,
     )
 
-    # Validate dataset output matches Stage-1 input channels
+    # Validate channel count
     test_x, _ = source_dataset[0]
-    C = test_x.shape[0] if test_x.ndim == 3 else test_x.shape[1]
+    produced_channels = test_x.shape[1] if test_x.ndim == 4 else test_x.shape[0]
 
-    print("Dataset sample shape AFTER preprocessing:", test_x.shape)
+    print("Dataset sample shape:", test_x.shape)
+    print(f"Dataset produces {produced_channels} channels")
 
-    if C != true_stage1_in_channels:
+    if produced_channels != stage1_channels:
         raise RuntimeError(
-            f"Dataset produces {C} channels but Stage-1 encoder expects {true_stage1_in_channels}. "
-            f"Check remove_duplicate_features/features_to_keep settings."
+            f"❌ Dataset channels ({produced_channels}) do not match Stage-1 encoder channels ({stage1_channels})"
         )
 
+    # ----------------------------------------------------------
+    # Create dataloader
+    # ----------------------------------------------------------
     src_loader = DataLoader(
         source_dataset,
         batch_size=batch_size,
@@ -143,54 +144,52 @@ def export_weights_for_fold(
         pin_memory=True,
     )
 
-    # ---------------------------------------------------
-    # Collect true source years
-    # ---------------------------------------------------
-    print("Extracting src_year array…")
+    # ----------------------------------------------------------
+    # Extract true source years
+    # ----------------------------------------------------------
+    print("Extracting source year array…")
     src_years = get_source_years(source_dataset)
 
-    # ---------------------------------------------------
-    # Weight computation
-    # ---------------------------------------------------
-    print("Computing IWAN importance weights…")
-    weights = []
+    # ----------------------------------------------------------
+    # Compute IWAN weights
+    # ----------------------------------------------------------
+    print("Computing IWAN weights…")
 
+    weights = []
     with torch.no_grad():
         for x, _ in tqdm(src_loader):
             x = x.to(device)
 
-            feats = encoder(x)[-1]      # Deepest feature map
+            feats = encoder(x)[-1]       # last feature map
             logits = disc(feats)
-            D = torch.sigmoid(logits)   # P(sample = source)
-            w = 1.0 - D                 # IWAN importance
+            D = torch.sigmoid(logits)    # prob(sample is source)
+            w = 1.0 - D                  # importance weight
 
             weights.append(w.cpu().numpy())
 
     weights = np.concatenate(weights, axis=0)
 
-    # ---------------------------------------------------
-    # Save output HDF5
-    # ---------------------------------------------------
+    # ----------------------------------------------------------
+    # Save output
+    # ----------------------------------------------------------
     os.makedirs(save_dir, exist_ok=True)
     out_path = os.path.join(save_dir, f"weights_srcyears_target_{target_year}.h5")
 
-    print(f"Saving → {out_path}")
-
+    print("Saving HDF5 →", out_path)
     with h5py.File(out_path, "w") as f:
         f.create_dataset("sample_index", data=np.arange(len(source_dataset)))
-        f.create_dataset("w", data=weights)
         f.create_dataset("src_year", data=src_years)
+        f.create_dataset("w", data=weights)
         f.attrs["target_year"] = int(target_year)
 
-    print(f"✅ Fold {fold} exported successfully.\n")
+    print(f"✅ Finished Fold {fold}\n")
 
 
-
-# =====================================================================
-# MAIN — Loop over folds
-# =====================================================================
+# --------------------------------------------------------------------
+# RUN ALL FOLDS
+# --------------------------------------------------------------------
 if __name__ == "__main__":
-    print("🚀 Starting Stage-2 weight export job...")
+    print("🚀 Starting Stage-2 Weight Export…")
 
     STAGE1_CKPT_DIR = {
         1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
@@ -233,4 +232,4 @@ if __name__ == "__main__":
             save_dir=SAVE_DIR,
         )
 
-    print("\n🎉 ALL FOLDS COMPLETED SUCCESSFULLY!")
+    print("\n🎉 All folds completed successfully!")
