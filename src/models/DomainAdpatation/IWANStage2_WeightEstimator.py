@@ -570,6 +570,7 @@ import torch.nn as nn
 import segmentation_models_pytorch as smp
 import h5py
 import wandb
+import numpy as np
 
 from torch.utils.data import DataLoader
 from itertools import cycle
@@ -1017,62 +1018,145 @@ class IWANStage2_WeightEstimator(BaseModel):
     # ============================================================
     # SAVE IWAN WEIGHTS — GPU FAST
     # ============================================================
-    @torch.inference_mode()
-    def _save_weights_for_year(self, disc, source_loader, device, year, history):
-        disc.eval()
-        out = []
+    # @torch.inference_mode()
+    # def _save_weights_for_year(self, disc, source_loader, device, year, history):
+    #     disc.eval()
+    #     out = []
 
-        for x_s, _ in source_loader:
+    #     for x_s, _ in source_loader:
+    #         x_s = x_s.to(device, non_blocking=True)
+    #         if x_s.ndim == 5:
+    #             x_s = x_s.flatten(1, 2)
+
+    #         f_s = self.encode(x_s)
+    #         # logits = disc(f_s)
+    #         # p = torch.sigmoid(logits)
+    #         # out.append(p.cpu())
+
+    #         logits = disc(f_s)
+    #         D_star = torch.sigmoid(logits)   # probability of source
+    #         w = 1.0 - D_star 
+    #         out.append(w.cpu())                # IWAN importance weight
+
+    #     weights = torch.cat(out, 0).numpy()
+
+    #     # Save to per-target-year file
+    #     weight_file = os.path.join(
+    #         self.weight_file_base, f"single_layer_cnnmodel_allothertrain_test_{year}.h5"
+    #     )
+    #     with h5py.File(weight_file, "a") as f:
+    #         if "sample_index" not in f:
+    #             f.create_dataset("sample_index",
+    #                              data=list(range(len(source_loader.dataset))),
+    #                              compression="gzip")
+    #         f.create_dataset("w", data=weights, compression="gzip")
+
+    #     print(f"   💾 Saved weights → {weight_file}")
+
+
+    #     # --------------------------------------------------------
+    #     # NEW: SAVE CHECKPOINT TO LIGHTNING DEFAULT CHECKPOINT DIR
+    #     # --------------------------------------------------------
+    #     # Save stage-2 checkpoints inside save_dir/stage2_checkpoints
+    #     ckpt_dir = os.path.join(self.weight_file_base, "stage2_checkpoints")
+    #     os.makedirs(ckpt_dir, exist_ok=True)
+
+    #     ckpt_path = os.path.join(
+    #         ckpt_dir, f"iwan_stage2_CNNmodel_target_year{year}.ckpt"
+    #     )
+
+    #     torch.save({
+    #         "discriminator": disc.state_dict(),
+    #         "feat_dim": self.feat_dim,
+    #         "target_year": year,
+    #         "source_year": self.source_year,
+    #         "history": history,
+    #     }, ckpt_path)
+
+    #     print(f"   📌 Saved Stage-2 checkpoint → {ckpt_path}")
+
+
+
+    @torch.inference_mode()
+    def _save_weights_for_year(self, disc, source_loader, device, target_year, history):
+
+        disc.eval()
+        out_weights = []
+        out_years = []
+
+        source_dataset = source_loader.dataset
+
+        # Prepare array of true years for each sample index
+        source_year_list = []
+        for i in range(len(source_dataset)):
+            yr, _, _ = source_dataset.find_image_index_from_dataset_index(i)
+            source_year_list.append(int(yr))
+        source_year_list = np.array(source_year_list, dtype=int)
+
+        # Compute IWAN weights
+        for batch_idx, (x_s, _) in enumerate(source_loader):
             x_s = x_s.to(device, non_blocking=True)
             if x_s.ndim == 5:
                 x_s = x_s.flatten(1, 2)
 
-            f_s = self.encode(x_s)
-            # logits = disc(f_s)
-            # p = torch.sigmoid(logits)
-            # out.append(p.cpu())
+            feats = self.encode(x_s)
+            logits = disc(feats)
+            D_star = torch.sigmoid(logits)
+            w = 1.0 - D_star
 
-            logits = disc(f_s)
-            D_star = torch.sigmoid(logits)   # probability of source
-            w = 1.0 - D_star 
-            out.append(w.cpu())                # IWAN importance weight
+            out_weights.append(w.cpu().numpy())
 
-        weights = torch.cat(out, 0).numpy()
+        weights = np.concatenate(out_weights, axis=0)
 
-        # Save to per-target-year file
+        # HDF5 output path
         weight_file = os.path.join(
-            self.weight_file_base, f"single_layer_cnnmodel_allothertrain_test_{year}.h5"
+            self.weight_file_base,
+            f"single_layer_1024_new_allothertrain_test_{target_year}.h5"
         )
-        with h5py.File(weight_file, "a") as f:
-            if "sample_index" not in f:
-                f.create_dataset("sample_index",
-                                 data=list(range(len(source_loader.dataset))),
-                                 compression="gzip")
-            f.create_dataset("w", data=weights, compression="gzip")
+
+        with h5py.File(weight_file, "w") as f:
+
+            # Dataset: sample indices
+            f.create_dataset(
+                "sample_index",
+                data=np.arange(len(source_dataset)),
+                compression="gzip"
+            )
+
+            # Dataset: IWAN weights
+            f.create_dataset(
+                "w",
+                data=weights,
+                compression="gzip"
+            )
+
+            # Dataset: TRUE source year for each sample
+            f.create_dataset(
+                "source_year",
+                data=source_year_list,
+                compression="gzip"
+            )
 
         print(f"   💾 Saved weights → {weight_file}")
 
-
-        # --------------------------------------------------------
-        # NEW: SAVE CHECKPOINT TO LIGHTNING DEFAULT CHECKPOINT DIR
-        # --------------------------------------------------------
-        # Save stage-2 checkpoints inside save_dir/stage2_checkpoints
+        # Save Stage-2 checkpoint too (unchanged)
         ckpt_dir = os.path.join(self.weight_file_base, "stage2_checkpoints")
         os.makedirs(ckpt_dir, exist_ok=True)
 
         ckpt_path = os.path.join(
-            ckpt_dir, f"iwan_stage2_CNNmodel_target_year{year}.ckpt"
+            ckpt_dir, f"iwan_stage2_1024_new_allothertrain_target_year{target_year}.ckpt"
         )
 
         torch.save({
             "discriminator": disc.state_dict(),
             "feat_dim": self.feat_dim,
-            "target_year": year,
-            "source_year": self.source_year,
+            "target_year": target_year,
+            "source_years": list(np.unique(source_year_list)),
             "history": history,
         }, ckpt_path)
 
         print(f"   📌 Saved Stage-2 checkpoint → {ckpt_path}")
+
 
     @torch.inference_mode()
     def _eval_pair(self, disc, src_loader, tgt_loader, device):
