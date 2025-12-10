@@ -157,67 +157,67 @@ def export_weights_for_fold(
 # -----------------------------------------------------------
 # MAIN — fold loop
 # -----------------------------------------------------------
-# if __name__ == "__main__":
-#     print("🚀 Starting Stage-2 weight export job...")
-
-#     STAGE1_CKPT_DIR = {
-#         0: "/develop/results/wildfire-progression/gvuu0kii/checkpoints",
-#         1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
-#         2: "/develop/results/wildfire-progression/zsqvrj9f/checkpoints",
-#         3: "/develop/results/wildfire-progression/04zyztgf/checkpoints",
-#         4: "/develop/results/wildfire-progression/kf5e2z7i/checkpoints",
-#         5: "/develop/results/wildfire-progression/z4fpm67c/checkpoints",
-#         6: "/develop/results/wildfire-progression/xu8nf4pr/checkpoints",
-#         7: "/develop/results/wildfire-progression/3gx6vn1b/checkpoints",
-#         8: "/develop/results/wildfire-progression/gbco149i/checkpoints",
-#         9: "/develop/results/wildfire-progression/u2jopt8y/checkpoints",
-#         10: "/develop/results/wildfire-progression/asvp9e1m/checkpoints",
-#         11: "/develop/results/wildfire-progression/6l528lvo/checkpoints",
-#         12: "/develop/results/wildfire-progression/o7t67rsw/checkpoints",
-#     }
-
-#     STAGE2_CKPT_DIR = {
-#         0: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2012.ckpt",
-#         1: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
-#         2: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2014.ckpt",
-#         3: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2015.ckpt",
-#         4: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2016.ckpt",
-#         5: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2017.ckpt",
-#         6: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2018.ckpt",
-#         7: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2019.ckpt",
-#         8: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2020.ckpt",
-#         9: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2021.ckpt",
-#         10: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2022.ckpt",
-#         11: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2023.ckpt",
-#     }
-
-#     DATA_DIR = "/develop/data/WildfireSpreadTS_2012_2015_hdf5/"
-#     SAVE_DIR = "/develop/results/stage2_weight_exports/"
-
-#     for fold in STAGE1_CKPT_DIR:
-#         export_weights_for_fold(
-#             fold=fold,
-#             stage1_ckpt_dir=STAGE1_CKPT_DIR[fold],
-#             stage2_ckpt_path=STAGE2_CKPT_DIR[fold],
-#             data_dir=DATA_DIR,
-#             save_dir=SAVE_DIR,
-#         )
-
-#     print("\n🎉 ALL FOLDS COMPLETED SUCCESSFULLY!")
-
-
-
 if __name__ == "__main__":
-    print("🚀 Inspecting Stage-2 checkpoints...")
+    print("🚀 Starting Stage-2 weight export job...")
 
-    # Hardcode the ckpt paths you want to inspect
-    ckpt_files = [
-        "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2012.ckpt",
-        "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
-        "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2023.ckpt",
-    ]
+    STAGE1_CKPT_DIR = {
+        # 0: "/develop/results/wildfire-progression/gvuu0kii/checkpoints",
+        1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
+        2: "/develop/results/wildfire-progression/zsqvrj9f/checkpoints",
+        3: "/develop/results/wildfire-progression/04zyztgf/checkpoints",
+        4: "/develop/results/wildfire-progression/kf5e2z7i/checkpoints",
+        5: "/develop/results/wildfire-progression/z4fpm67c/checkpoints",
+        6: "/develop/results/wildfire-progression/xu8nf4pr/checkpoints",
+        7: "/develop/results/wildfire-progression/3gx6vn1b/checkpoints",
+        8: "/develop/results/wildfire-progression/gbco149i/checkpoints",
+        9: "/develop/results/wildfire-progression/u2jopt8y/checkpoints",
+        10: "/develop/results/wildfire-progression/asvp9e1m/checkpoints",
+        11: "/develop/results/wildfire-progression/6l528lvo/checkpoints",
+        12: "/develop/results/wildfire-progression/o7t67rsw/checkpoints",
+    }
 
-    for path in ckpt_files:
-        inspect_checkpoint(path)
+    STAGE2_CKPT_DIR = {
+        # 0: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2012.ckpt",
+        1: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
+        2: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2014.ckpt",
+        3: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2015.ckpt",
+        4: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2016.ckpt",
+        5: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2017.ckpt",
+        6: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2018.ckpt",
+        7: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2019.ckpt",
+        8: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2020.ckpt",
+        9: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2021.ckpt",
+        10: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2022.ckpt",
+        11: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2023.ckpt",
+    }
 
-    print("🔎 Inspection complete — no weights exported.")
+    DATA_DIR = "/develop/data/WildfireSpreadTS_2012_2015_hdf5/"
+    SAVE_DIR = "/develop/results/stage2_weight_exports/"
+
+    for fold in STAGE1_CKPT_DIR:
+        export_weights_for_fold(
+            fold=fold,
+            stage1_ckpt_dir=STAGE1_CKPT_DIR[fold],
+            stage2_ckpt_path=STAGE2_CKPT_DIR[fold],
+            data_dir=DATA_DIR,
+            save_dir=SAVE_DIR,
+        )
+
+    print("\n🎉 ALL FOLDS COMPLETED SUCCESSFULLY!")
+
+
+
+# if __name__ == "__main__":
+#     print("🚀 Inspecting Stage-2 checkpoints...")
+
+#     # Hardcode the ckpt paths you want to inspect
+#     ckpt_files = [
+#         "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2012.ckpt",
+#         "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
+#         "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2023.ckpt",
+#     ]
+
+#     for path in ckpt_files:
+#         inspect_checkpoint(path)
+
+#     print("🔎 Inspection complete — no weights exported.")
