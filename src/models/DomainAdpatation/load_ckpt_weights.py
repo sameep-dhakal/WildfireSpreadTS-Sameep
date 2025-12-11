@@ -67,13 +67,18 @@ def export_weights_for_fold(
     save_dir,
     batch_size=64,
     num_workers=8,
-    device="cuda",
+    device=None,
     features_to_keep=STAGE2_FEATURES_TO_KEEP,
 ):
+    # Auto-select device if not provided
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
     print("\n==============================")
     print(f"🔥 Fold {fold}")
     print(f"Stage-1 ckpt dir: {stage1_ckpt_dir}")
     print(f"Stage-2 checkpoint: {stage2_ckpt_path}")
+    print(f"Device: {device}")
     print("==============================\n")
 
     # ---------------------------------------------------
