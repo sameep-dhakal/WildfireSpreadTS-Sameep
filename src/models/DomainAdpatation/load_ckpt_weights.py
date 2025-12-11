@@ -56,6 +56,14 @@ def get_source_years(dataset):
     return np.array(years, dtype=int)
 
 
+def summarize_year_counts(dataset):
+    """Return a dict of {year: num_samples} based on dataset internals."""
+    counts = {}
+    for fire_year, fires in dataset.datapoints_per_fire.items():
+        counts[int(fire_year)] = sum(fires.values())
+    return counts
+
+
 # =====================================================================
 # EXPORT FUNCTION — FIXED + T=1 HANDLING
 # =====================================================================
@@ -140,6 +148,10 @@ def export_weights_for_fold(
         is_pad=STAGE2_IS_PAD,
     )
 
+    # Quick per-year summary to catch missing data early
+    year_counts = summarize_year_counts(source_dataset)
+    print("Per-year sample counts (source_dataset):", year_counts)
+
     test_x, _ = source_dataset[0]
 
     # Collapse temporal dimension when T=1 to match encoder expectations
@@ -211,7 +223,7 @@ def export_weights_for_fold(
     # Save output
     # ---------------------------------------------------
     os.makedirs(save_dir, exist_ok=True)
-    out_path = os.path.join(save_dir, f"weights_srcyears_target_{target_year}.h5")
+    out_path = os.path.join(save_dir, f"weights_new_srcyears_target_{target_year}.h5")
 
     print("Saving:", out_path)
     with h5py.File(out_path, "w") as f:
