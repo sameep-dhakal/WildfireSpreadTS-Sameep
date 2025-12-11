@@ -9,6 +9,14 @@ from models.SMPModel import SMPModel
 from dataloader.FireSpreadDataset import FireSpreadDataset
 from models.DomainAdpatation.IWANStage2_WeightEstimator import DomainHead3x1024
 
+# Match the Stage-2 data pipeline defaults (from the sweep YAML)
+STAGE2_FEATURES_TO_KEEP = [0, 1, 2, 3, 4, 38, 39]
+STAGE2_REMOVE_DUPLICATE_FEATURES = True
+STAGE2_RETURN_DOY = False
+STAGE2_N_LEADING_OBS = 1
+STAGE2_CROP_SIDE_LENGTH = 128
+STAGE2_LOAD_FROM_HDF5 = True
+STAGE2_IS_PAD = False
 
 # =====================================================================
 # Inspect checkpoints
@@ -58,8 +66,9 @@ def export_weights_for_fold(
     data_dir,
     save_dir,
     batch_size=64,
-    num_workers=4,
-    device="cuda"
+    num_workers=8,
+    device="cuda",
+    features_to_keep=STAGE2_FEATURES_TO_KEEP,
 ):
     print("\n==============================")
     print(f"🔥 Fold {fold}")
@@ -91,29 +100,35 @@ def export_weights_for_fold(
     ckpt2 = torch.load(stage2_ckpt_path, map_location=device)
     feat_dim = ckpt2["feat_dim"]
     target_year = ckpt2["target_year"]
+    source_years = ckpt2.get("source_years")
+    if source_years is None:
+        src_year = ckpt2.get("source_year")
+        source_years = [int(src_year)] if src_year is not None else list(range(2012, 2024))
+    source_years = [int(y) for y in source_years]
 
     print(f"Target year for fold {fold}: {target_year}")
+    print(f"Source years from Stage-2 ckpt: {source_years}")
 
     disc = DomainHead3x1024(feat_dim).to(device)
     disc.load_state_dict(ckpt2["discriminator"])
     disc.eval()
 
     # ---------------------------------------------------
-    # Dataset built EXACTLY like Stage-1 saw it
+    # Dataset built EXACTLY like Stage-2 training used it
     # ---------------------------------------------------
     source_dataset = FireSpreadDataset(
         data_dir=data_dir,
-        included_fire_years=list(range(2012, 2024)),
-        n_leading_observations=1,          # VERY IMPORTANT
+        included_fire_years=source_years,
+        n_leading_observations=STAGE2_N_LEADING_OBS,
         n_leading_observations_test_adjustment=None,
-        crop_side_length=128,
-        load_from_hdf5=True,
-        is_train=False,
-        remove_duplicate_features=False,
-        stats_years=list(range(2012, 2024)),
-        features_to_keep=None,
-        return_doy=False,
-        is_pad=False
+        crop_side_length=STAGE2_CROP_SIDE_LENGTH,
+        load_from_hdf5=STAGE2_LOAD_FROM_HDF5,
+        is_train=True,  # Stage-2 trained on the train split with augmentations
+        remove_duplicate_features=STAGE2_REMOVE_DUPLICATE_FEATURES,
+        stats_years=source_years,
+        features_to_keep=features_to_keep,
+        return_doy=STAGE2_RETURN_DOY,
+        is_pad=STAGE2_IS_PAD,
     )
 
     test_x, _ = source_dataset[0]
@@ -177,6 +192,7 @@ def export_weights_for_fold(
         f.create_dataset("sample_index", data=np.arange(len(source_dataset)))
         f.create_dataset("w", data=weights)
         f.create_dataset("src_year", data=src_years)
+        f.attrs["source_years"] = np.array(source_years, dtype=int)
         f.attrs["target_year"] = int(target_year)
 
     print(f"✅ Fold {fold} completed\n")
