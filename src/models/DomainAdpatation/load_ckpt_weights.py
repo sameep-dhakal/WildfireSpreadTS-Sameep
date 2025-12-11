@@ -270,17 +270,17 @@ if __name__ == "__main__":
     }
 
     STAGE2_CKPT_DIR = {
-        1: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
-        2: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2014.ckpt",
-        3: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2015.ckpt",
-        4: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2016.ckpt",
-        5: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2017.ckpt",
-        6: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2018.ckpt",
-        7: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2019.ckpt",
-        8: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2020.ckpt",
-        9: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2021.ckpt",
-        10: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2022.ckpt",
-        11: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2023.ckpt",
+        1: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2013.ckpt",
+        2: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2014.ckpt",
+        3: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2015.ckpt",
+        4: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2016.ckpt",
+        5: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2017.ckpt",
+        6: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2018.ckpt",
+        7: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2019.ckpt",
+        8: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2020.ckpt",
+        9: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2021.ckpt",
+        10: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2022.ckpt",
+        11: "/develop/results/stage2_checkpoints/iwan_stage2_1024_new_allothertrain_target_year2023.ckpt",
     }
 
     DATA_DIR = "/develop/data/WildfireSpreadTS_2012_2015_hdf5/"
