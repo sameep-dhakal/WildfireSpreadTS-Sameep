@@ -137,6 +137,13 @@ def export_weights_for_fold(
     )
 
     test_x, _ = source_dataset[0]
+
+    # Collapse temporal dimension when T=1 to match encoder expectations
+    if test_x.ndim == 4 and test_x.shape[0] == 1:      # [T, C, H, W]
+        test_x = test_x[0]                             # -> [C, H, W]
+    elif test_x.ndim == 4 and test_x.shape[0] != 1:
+        raise RuntimeError(f"Expected T=1 but got T={test_x.shape[0]}")
+
     print(f"Dataset sample shape AFTER preprocessing: {test_x.shape}")
 
     if test_x.shape[0] != expected_channels:
@@ -171,8 +178,17 @@ def export_weights_for_fold(
             if x.ndim == 5:
                 if x.shape[1] != 1:
                     raise RuntimeError(f"Expected T=1 but got T={x.shape[1]}")
-
                 x = x[:, 0]  # remove temporal dimension → [B, C, H, W]
+            elif x.ndim == 4 and test_x.ndim == 3:
+                # Already collapsed per-sample; nothing to do
+                pass
+            elif x.ndim == 4:
+                # Handle [B, T, C, H, W] already flattened by dataset? ensure T=1 case
+                if x.shape[1] == expected_channels:
+                    # shape [B, C, H, W]
+                    pass
+                else:
+                    raise RuntimeError(f"Unexpected input shape {tuple(x.shape)}")
 
             x = x.to(device)
 
