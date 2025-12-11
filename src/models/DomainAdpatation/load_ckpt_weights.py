@@ -110,6 +110,10 @@ def export_weights_for_fold(
         src_year = ckpt2.get("source_year")
         source_years = [int(src_year)] if src_year is not None else list(range(2012, 2024))
     source_years = [int(y) for y in source_years]
+    if len(source_years) == 1:
+        # The Stage-2 ckpt only recorded a single source_year; fall back to full range
+        print("⚠️ Stage-2 ckpt lists a single source year; using full 2012–2023 range to recover per-sample years.")
+        source_years = list(range(2012, 2024))
 
     print(f"Target year for fold {fold}: {target_year}")
     print(f"Source years from Stage-2 ckpt: {source_years}")
@@ -164,6 +168,7 @@ def export_weights_for_fold(
     # ---------------------------------------------------
     print("Extracting src_year array…")
     src_years = get_source_years(source_dataset)
+    print(f"Unique src_years found: {np.unique(src_years)}")
 
     # ---------------------------------------------------
     # Compute IWAN weights
