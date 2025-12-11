@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 
 from models.SMPModel import SMPModel
 from dataloader.FireSpreadDataset import FireSpreadDataset
+from collections import Counter
 from models.DomainAdpatation.IWANStage2_WeightEstimator import DomainHead3x1024
 
 # Match the Stage-2 data pipeline defaults (from the sweep YAML)
@@ -46,14 +47,24 @@ def inspect_checkpoint(ckpt_path):
 
 
 # =====================================================================
-# Extract true source years
+# Extract true source years without relying on per-sample lookups
 # =====================================================================
 def get_source_years(dataset):
-    years = []
-    for i in range(len(dataset)):
-        yr, _, _ = dataset.find_image_index_from_dataset_index(i)
-        years.append(int(yr))
-    return np.array(years, dtype=int)
+    # dataset.datapoints_per_fire maps year -> {fire_name: count}
+    year_counts = []
+    for year, fires in dataset.datapoints_per_fire.items():
+        cnt = sum(fires.values())
+        if cnt > 0:
+            year_counts.append((int(year), cnt))
+
+    total = sum(c for _, c in year_counts)
+    years = np.empty(total, dtype=int)
+    idx = 0
+    for year, cnt in year_counts:
+        years[idx:idx+cnt] = year
+        idx += cnt
+
+    return years
 
 
 def summarize_year_counts(dataset):
@@ -180,7 +191,8 @@ def export_weights_for_fold(
     # ---------------------------------------------------
     print("Extracting src_year array…")
     src_years = get_source_years(source_dataset)
-    print(f"Unique src_years found: {np.unique(src_years)}")
+    year_freq = Counter(src_years)
+    print(f"Unique src_years found: {sorted(year_freq.items())}")
 
     # ---------------------------------------------------
     # Compute IWAN weights
