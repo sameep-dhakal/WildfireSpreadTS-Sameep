@@ -479,7 +479,8 @@ class MyLightningCLI(LightningCLI):
             target_year = None
 
         self.config.data.source_year = source_year
-        self.config.model.init_args.source_year = source_year
+        if "IWANStage2" in model_class:
+            self.config.model.init_args.source_year = source_year
 
         # class weight
         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
