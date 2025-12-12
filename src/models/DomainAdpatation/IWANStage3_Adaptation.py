@@ -94,19 +94,43 @@ class IWANStage3_Adaptation(BaseModel):
         for p in self.domain_head.parameters():
             p.requires_grad = False
 
+    # @torch.no_grad()
+    # def compute_importance(self, feat):
+    #     # feat: (B, C, H, W)
+    #     logits = self.domain_head(feat)       # (B,)
+    #     p_source = torch.sigmoid(logits)      # (B,)
+    #     p_target = 1.0 - p_source  
+    #     # Normalize first (IWAN rule)
+
+    #     #softening the weights 
+    #     w = torch.sqrt(p_target)    
+    #     w = w / (w.mean() + 1e-8)
+
+    #     return w 
+
     @torch.no_grad()
     def compute_importance(self, feat):
         # feat: (B, C, H, W)
         logits = self.domain_head(feat)       # (B,)
         p_source = torch.sigmoid(logits)      # (B,)
         p_target = 1.0 - p_source  
-        # Normalize first (IWAN rule)
+        eps = 1e-8
 
-        #softening the weights 
-        w = torch.sqrt(p_target)    
-        w = w / (w.mean() + 1e-8)
+        # -----------------------------------------------
+        # ⭐ LOGARITHMIC SOFTENING
+        # w_raw = p_target / mean(p_target)
+        # softened using log(1 + x)
+        # -----------------------------------------------
+        w_raw = p_target / (p_target.mean() + eps)
 
-        return w 
+        # concave softening: log(1 + x)
+        w = torch.log1p(w_raw)    # log(1 + w_raw)
+
+        # normalize again to preserve scale
+        w = w / (w.mean() + eps)
+
+        return w
+
 
     def forward(self, x, doys=None):
         if x.ndim == 5:
