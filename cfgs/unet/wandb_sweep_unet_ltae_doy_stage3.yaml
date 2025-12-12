@@ -1,4 +1,4 @@
-project: wildfire-resnet18-domainadaptation-stage3-initialweight
+project: wildfire-domainadaptation-stage3-initialweight
 command:
   - ${env}
   - python
@@ -23,8 +23,8 @@ parameters:
   data.data_fold_id:
     values:
       - 0
-      # - 1
-      # - 2
+      - 7
+      - 8
       # - 3
       # - 4
       # - 5
