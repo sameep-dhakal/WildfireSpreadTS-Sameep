@@ -390,6 +390,8 @@ from models.DomainAdpatation.IWANStage3_Adaptation import IWANStage3_Adaptation
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 torch.set_float32_matmul_precision("high")
 
+DEFAULT_STAGE3_FEATURES = [0, 1, 2, 3, 4, 38, 39]
+
 
 def first_ckpt(path, target_year=None):
     """Return the first .ckpt in a directory, optionally filtered by target year substring."""
@@ -449,7 +451,10 @@ class MyLightningCLI(LightningCLI):
         parser.add_argument("--ckpt_path", type=str, default=None)
 
     def before_instantiate_classes(self):
-        # Infer channels
+        # Infer channels (for Stage-3 default to the 7-channel subset if not provided)
+        if self.config.data.features_to_keep is None and "IWANStage3" in str(self.config.model.class_path):
+            self.config.data.features_to_keep = DEFAULT_STAGE3_FEATURES
+        # Ensure the features_to_keep from sweep is honored; no override otherwise
         n_features = FireSpreadDataset.get_n_features(
             self.config.data.n_leading_observations,
             self.config.data.features_to_keep,
