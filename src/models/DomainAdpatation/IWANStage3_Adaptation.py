@@ -131,28 +131,61 @@ class IWANStage3_Adaptation(BaseModel):
 
     #     return w
 
+    # @torch.no_grad()
+    # def compute_importance(self, feat):
+    #     # feat: (B, C, H, W)
+    #     logits = self.domain_head(feat)       # (B,)
+    #     p_source = torch.sigmoid(logits)      # (B,)
+    #     p_target = 1.0 - p_source             # (B,)
+
+    #     eps = 1e-8
+
+    #     # -----------------------------------------------
+    #     # IWAN normalization: importance = p_target / mean
+    #     # -----------------------------------------------
+    #     w_raw = p_target / (p_target.mean() + eps)
+
+    #     # -----------------------------------------------
+    #     # ⭐ Hyperbolic concave softening: softsign
+    #     # w = x / sqrt(1 + x^2)
+    #     # -----------------------------------------------
+    #     w = w_raw / torch.sqrt(1 + w_raw * w_raw)
+
+    #     # normalize again so average weight = 1
+    #     w = w / (w.mean() + eps)
+
+    #     return w
+
+
     @torch.no_grad()
     def compute_importance(self, feat):
-        # feat: (B, C, H, W)
-        logits = self.domain_head(feat)       # (B,)
-        p_source = torch.sigmoid(logits)      # (B,)
-        p_target = 1.0 - p_source             # (B,)
+        """
+        Compute IWAN-style importance weights in a stable, SGD-friendly way.
+
+        Steps:
+        1) p_target = 1 - D(x)
+        2) Normalize by batch mean (IWAN rule)
+        3) Mild concave softening (sqrt)
+        4) Renormalize
+        5) Clamp to avoid extreme weights
+        """
+        logits = self.domain_head(feat)          # (B,)
+        p_source = torch.sigmoid(logits)
+        p_target = 1.0 - p_source                # (B,)
 
         eps = 1e-8
 
-        # -----------------------------------------------
-        # IWAN normalization: importance = p_target / mean
-        # -----------------------------------------------
-        w_raw = p_target / (p_target.mean() + eps)
+        # 1. IWAN normalization
+        w = p_target / (p_target.mean() + eps)
 
-        # -----------------------------------------------
-        # ⭐ Hyperbolic concave softening: softsign
-        # w = x / sqrt(1 + x^2)
-        # -----------------------------------------------
-        w = w_raw / torch.sqrt(1 + w_raw * w_raw)
+        # 2. Mild concave softening
+        w = torch.sqrt(w)
 
-        # normalize again so average weight = 1
+        # 3. Renormalize so mean(weight) = 1
         w = w / (w.mean() + eps)
+
+        # 4. Clamp (critical for stability)
+        w = torch.clamp(w, min=0.7, max=1.3)
 
         return w
 
