@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-stage3-logweight
+project: wildfire-domainadaptation-stage3-softsignweight
 command:
   - ${env}
   - python

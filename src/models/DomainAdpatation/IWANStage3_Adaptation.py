@@ -108,28 +108,54 @@ class IWANStage3_Adaptation(BaseModel):
 
     #     return w 
 
+    # @torch.no_grad()
+    # def compute_importance(self, feat):
+    #     # feat: (B, C, H, W)
+    #     logits = self.domain_head(feat)       # (B,)
+    #     p_source = torch.sigmoid(logits)      # (B,)
+    #     p_target = 1.0 - p_source  
+    #     eps = 1e-8
+
+    #     # -----------------------------------------------
+    #     # ⭐ LOGARITHMIC SOFTENING
+    #     # w_raw = p_target / mean(p_target)
+    #     # softened using log(1 + x)
+    #     # -----------------------------------------------
+    #     w_raw = p_target / (p_target.mean() + eps)
+
+    #     # concave softening: log(1 + x)
+    #     w = torch.log1p(w_raw)    # log(1 + w_raw)
+
+    #     # normalize again to preserve scale
+    #     w = w / (w.mean() + eps)
+
+    #     return w
+
     @torch.no_grad()
     def compute_importance(self, feat):
         # feat: (B, C, H, W)
         logits = self.domain_head(feat)       # (B,)
         p_source = torch.sigmoid(logits)      # (B,)
-        p_target = 1.0 - p_source  
+        p_target = 1.0 - p_source             # (B,)
+
         eps = 1e-8
 
         # -----------------------------------------------
-        # ⭐ LOGARITHMIC SOFTENING
-        # w_raw = p_target / mean(p_target)
-        # softened using log(1 + x)
+        # IWAN normalization: importance = p_target / mean
         # -----------------------------------------------
         w_raw = p_target / (p_target.mean() + eps)
 
-        # concave softening: log(1 + x)
-        w = torch.log1p(w_raw)    # log(1 + w_raw)
+        # -----------------------------------------------
+        # ⭐ Hyperbolic concave softening: softsign
+        # w = x / sqrt(1 + x^2)
+        # -----------------------------------------------
+        w = w_raw / torch.sqrt(1 + w_raw * w_raw)
 
-        # normalize again to preserve scale
+        # normalize again so average weight = 1
         w = w / (w.mean() + eps)
 
         return w
+
 
 
     def forward(self, x, doys=None):
