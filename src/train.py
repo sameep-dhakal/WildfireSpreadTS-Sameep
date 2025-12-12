@@ -464,13 +464,17 @@ class MyLightningCLI(LightningCLI):
             self.config.data.additional_data,
         )
 
+        model_class = str(self.config.model.class_path)
+
         source_year = int(train_years[0])
         if self.config.data.additional_data:
             all_years = set(range(2012, 2024))
             missing_years = sorted(list(all_years - set(train_years)))
             target_year = missing_years[0] if len(missing_years) == 1 else None
             self.config.data.target_year = target_year
-            self.config.model.init_args.all_target_years = [target_year] if target_year else None
+            # only Stage-2 uses all_target_years; Stage-3 ignores it
+            if "IWANStage2" in model_class and target_year:
+                self.config.model.init_args.all_target_years = [target_year]
         else:
             target_year = None
 
@@ -481,8 +485,6 @@ class MyLightningCLI(LightningCLI):
         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
         fire_rate = 1 - missing_values_rates[-1]
         self.config.model.init_args.pos_class_weight = float(1 / fire_rate)
-
-        model_class = str(self.config.model.class_path)
 
         # Stage-3: needs explicit Stage-1 + Stage-2 ckpts
         if "IWANStage3" in model_class:
