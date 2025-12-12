@@ -104,7 +104,7 @@ class IWANStage3_Adaptation(BaseModel):
         w = p_target / (p_target.mean() + 1e-8)
 
         # ⭐ SOFTEN WEIGHTS HERE (recommended: sqrt)
-        w = torch.sqrt(w)
+        # w = torch.sqrt(w)
         return w 
 
     def forward(self, x, doys=None):
