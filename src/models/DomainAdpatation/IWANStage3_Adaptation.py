@@ -25,6 +25,7 @@ class IWANStage3_Adaptation(BaseModel):
         encoder_name: str,
         n_channels: int,
         pos_class_weight: float,
+        save_dir: str = None,
         loss_function: str = "Focal",
         stage1_ckpt: str = None,
         stage2_ckpt: str = None,
@@ -53,6 +54,7 @@ class IWANStage3_Adaptation(BaseModel):
         self.lr = lr
         self.alpha_focal = alpha_focal
         self.gamma_focal = gamma_focal
+        self.save_dir = save_dir  # accepted for config compatibility
 
         if stage1_ckpt is None:
             raise ValueError("stage1_ckpt must be provided for IWANStage3_Adaptation.")
