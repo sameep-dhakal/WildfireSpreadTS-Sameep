@@ -46,3 +46,5 @@ parameters:
 
   do_validate:
     value: false     
+
+  program: src/train.py  
