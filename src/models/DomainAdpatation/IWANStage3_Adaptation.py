@@ -1,101 +1,214 @@
-import os, copy, torch
-import torch.nn as nn, torch.nn.functional as F
-import segmentation_models_pytorch as smp
+import torch
+import torch.nn as nn
+from torchvision.ops import sigmoid_focal_loss
+
+from models.SMPModel import SMPModel
+from models.DomainAdpatation.IWANStage2_WeightEstimator import (
+    DomainHead3x1024,
+    DomainheadCNN,
+)
 from ..BaseModel import BaseModel
 
 
-class GRL(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, lambd): ctx.lambd = lambd; return x.view_as(x)
-    @staticmethod
-    def backward(ctx, g): return -ctx.lambd * g, None
-class GradRev(nn.Module):
-    def __init__(self, lambd=1.0): super().__init__(); self.lambd=lambd
-    def forward(self, x): return GRL.apply(x, self.lambd)
-
-
-class DomainLogitHead(nn.Module):
-    def __init__(self, in_ch=512):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1), nn.Flatten(),
-            nn.Linear(in_ch, 1024), nn.BatchNorm1d(1024), nn.ReLU(), nn.Dropout(0.5),
-            nn.Linear(1024, 1024), nn.BatchNorm1d(1024), nn.ReLU(), nn.Dropout(0.5),
-            nn.Linear(1024, 1),
-        )
-    def forward(self, x): return self.net(x).squeeze(1)
-
 
 class IWANStage3_Adaptation(BaseModel):
-    """IWAN Stage 3 – Adversarial adaptation (Ft + D₀) with GRL and entropy."""
-    def __init__(self, ckpt_dir_stage1, ckpt_dir_stage2, encoder_name="resnet18",
-                 n_channels=7, lambda_adv=1.0, gamma_entropy=0.01, **kwargs):
-        super().__init__(n_channels=n_channels, **kwargs)
-        self.save_hyperparameters()
+    """
+    Stage 3: Importance-weighted segmentation training.
+    - Load Stage-1 SMP UNet (encoder+decoder+head)
+    - Load Stage-2 discriminator (frozen)
+    - Compute importance weights = p(target|x)/mean(p(target|x))
+    - Apply weighted segmentation loss in training_step
+    """
 
-        # ---- load Fs + C ----
-        f1 = [f for f in os.listdir(ckpt_dir_stage1) if f.endswith(".ckpt")]
-        if not f1: raise FileNotFoundError(f"No .ckpt in {ckpt_dir_stage1}")
-        ckpt_fs = torch.load(os.path.join(ckpt_dir_stage1, f1[0]), map_location="cpu")
-        src = smp.Unet(encoder_name, weights=None, in_channels=n_channels, classes=1)
-        sd = ckpt_fs.get("state_dict", ckpt_fs)
-        src.load_state_dict({k.replace("model.", ""): v for k, v in sd.items() if "model." in k}, strict=False)
-        self.Fs = src.encoder.eval()
-        self.decoder, self.seg_head = src.decoder, src.segmentation_head
-        for p in self.Fs.parameters(): p.requires_grad_(False)
+    def __init__(
+        self,
+        stage1_ckpt: str,
+        stage2_ckpt: str,
+        encoder_name: str,
+        n_channels: int,
+        pos_class_weight: float,
+        loss_function: str = "Focal",
+        use_doy: bool = False,
+        crop_before_eval: bool = False,
+        required_img_size=None,
+        alpha_focal: float = 0.25,
+        gamma_focal: float = 2.0,
+        encoder_weights=None,
+        lr: float = 1e-4,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            n_channels=n_channels,
+            flatten_temporal_dimension=True,
+            pos_class_weight=pos_class_weight,
+            loss_function=loss_function,
+            use_doy=use_doy,
+            crop_before_eval=crop_before_eval,
+            required_img_size=required_img_size,
+            alpha_focal=alpha_focal,
+            *args,
+            **kwargs,
+        )
+        self.lr = lr
+        self.alpha_focal = alpha_focal
+        self.gamma_focal = gamma_focal
 
-        # ---- load D_weights ----
-        f2 = [f for f in os.listdir(ckpt_dir_stage2) if f.endswith(".ckpt")]
-        if not f2: raise FileNotFoundError(f"No .ckpt in {ckpt_dir_stage2}")
-        ckpt_d = torch.load(os.path.join(ckpt_dir_stage2, f2[0]), map_location="cpu")
-        self.Dw = DomainLogitHead(self.Fs.out_channels[-1])
-        self.Dw.load_state_dict({k.replace("D.", ""): v for k, v in ckpt_d["state_dict"].items() if "D." in k})
-        self.Dw.eval()
-        for p in self.Dw.parameters(): p.requires_grad_(False)
+        # ---------------------------------------------------------
+        # Load Stage-1 segmentation model (encoder+decoder+head)
+        # ---------------------------------------------------------
+        base_seg: SMPModel = SMPModel.load_from_checkpoint(
+            stage1_ckpt,
+            encoder_name=encoder_name,
+            n_channels=n_channels,
+            flatten_temporal_dimension=True,
+            pos_class_weight=pos_class_weight,
+            encoder_weights=encoder_weights,
+        )
+        unet = base_seg.model
+        self.encoder = unet.encoder
+        self.decoder = unet.decoder
+        self.seg_head = unet.segmentation_head
 
-        # ---- initialize Ft + D₀ ----
-        self.Ft = copy.deepcopy(self.Fs)
-        self.D0 = DomainLogitHead(self.Fs.out_channels[-1])
-        self.grl = GradRev(1.0)
-        self.bce = nn.BCEWithLogitsLoss()
-        self.lambda_adv, self.gamma_entropy = lambda_adv, gamma_entropy
-        print("✅ Stage 3 initialized (Fs,C,Dw loaded)")
+        # ---------------------------------------------------------
+        # Load Stage-2 discriminator (frozen)
+        # ---------------------------------------------------------
+        state2 = torch.load(stage2_ckpt, map_location="cpu")
+        feat_dim = state2.get("feat_dim", self.encoder.out_channels[-1])
 
-    def _entropy(self, logits):
-        p = torch.sigmoid(logits).clamp(1e-6, 1 - 1e-6)
-        return -(p * torch.log(p) + (1 - p) * torch.log(1 - p)).mean()
+        # Stage-2 exports used DomainHead3x1024; fall back to CNN if needed
+        try:
+            self.domain_head = DomainHead3x1024(feat_dim)
+            self.domain_head.load_state_dict(state2["discriminator"], strict=True)
+        except Exception:
+            self.domain_head = DomainheadCNN(in_channels=feat_dim)
+            self.domain_head.load_state_dict(state2["discriminator"], strict=False)
 
-    def on_train_start(self):
-        self.target_iter = iter(self.trainer.datamodule.target_dataloader())
+        for p in self.domain_head.parameters():
+            p.requires_grad = False
 
-    def training_step(self, batch, _):
-        x_s, _ = batch[0], batch[1]
-        try: x_t, _ = next(self.target_iter)
-        except StopIteration:
-            self.target_iter = iter(self.trainer.datamodule.target_dataloader())
-            x_t, _ = next(self.target_iter)
-        x_t = x_t.to(self.device, non_blocking=True)
+    @torch.no_grad()
+    def compute_importance(self, feat):
+        # feat: (B, C, H, W)
+        logits = self.domain_head(feat)       # (B,)
+        p_source = torch.sigmoid(logits)      # (B,)
+        p_target = 1.0 - p_source             # (B,)
+        return p_target / (p_target.mean() + 1e-8)
 
-        with torch.no_grad(): f_s = self.Fs(x_s)[-1]
-        f_t = self.Ft(x_t)[-1]
+    def forward(self, x, doys=None):
+        if x.ndim == 5:
+            x = x.flatten(1, 2)
+        feats = self.encoder(x)
+        dec = self.decoder(*feats)
+        logits = self.seg_head(dec)
+        return logits, feats[-1]
 
-        with torch.no_grad():
-            p_src = torch.sigmoid(self.Dw(f_s))
-            w = (1 - p_src) / ((1 - p_src).mean() + 1e-6)
+    def training_step(self, batch, batch_idx):
+        # dataset returns (x, y) or (x, y, doys) depending on config
+        if isinstance(batch, dict):
+            x, y = batch["image"], batch["mask"]
+        elif len(batch) == 3:
+            x, y, _ = batch
+        else:
+            x, y = batch
 
-        log_s0 = self.D0(f_s)
-        log_t0 = self.D0(self.grl(f_t))
-        loss_src = F.binary_cross_entropy_with_logits(log_s0, torch.ones_like(log_s0), weight=w)
-        loss_tgt = F.binary_cross_entropy_with_logits(log_t0, torch.zeros_like(log_t0))
-        loss_adv = loss_src + loss_tgt
+        logits, deep_feat = self(x)
 
-        dec = self.decoder(*self.Ft(x_t))
-        y_hat_t = self.seg_head(dec)
-        loss_ent = self._entropy(y_hat_t)
+        loss, w = self._weighted_loss(logits, y, deep_feat)
 
-        total = self.lambda_adv * loss_adv + self.gamma_entropy * loss_ent
-        self.log_dict({"loss_adv": loss_adv, "loss_ent": loss_ent, "loss_total": total})
-        return total
+        # optional metrics (reuse BaseModel F1)
+        self.train_f1(torch.sigmoid(logits).squeeze(1), y)
+        self.log("train_f1", self.train_f1, prog_bar=True, on_epoch=True)
+        self.log("train_loss", loss, prog_bar=True, on_epoch=True)
+        self.log("train_weight_mean", w.mean(), prog_bar=False, on_epoch=True)
+        return loss
+
+    # def validation_step(self, batch, batch_idx):
+    #     # reuse BaseModel-style loss, no weighting
+    #     y_hat, y = self.get_pred_and_gt(batch)
+    #     loss = self.compute_loss(y_hat, y)
+    #     self.log("val_loss", loss, prog_bar=True, on_epoch=True)
+    #     return loss
+
+    # def test_step(self, batch, batch_idx):
+    #     # reuse BaseModel-style test metrics (AP/F1/etc.)
+    #     return super().test_step(batch, batch_idx)
+
+
+    def validation_step(self, batch, batch_idx):
+        if isinstance(batch, dict):
+            x, y = batch["image"], batch["mask"]
+        elif len(batch) == 3:
+            x, y, _ = batch
+        else:
+            x, y = batch
+        logits, _ = self(x)
+        y_hat = torch.sigmoid(logits).squeeze(1)
+        loss = self.compute_loss(y_hat, y)
+        self.val_avg_precision(y_hat, y)
+        self.val_f1(y_hat, y)
+        self.log("val_loss", loss, prog_bar=True, on_epoch=True)
+        self.log("val_avg_precision", self.val_avg_precision, prog_bar=True, on_epoch=True)
+        self.log("val_f1", self.val_f1, prog_bar=True, on_epoch=True)
+        return loss
+    
+
+    def test_step(self, batch, batch_idx):
+        if isinstance(batch, dict):
+            x, y = batch["image"], batch["mask"]
+        elif len(batch) == 3:
+            x, y, _ = batch
+        else:
+            x, y = batch
+        logits, _ = self(x)
+        y_hat = torch.sigmoid(logits).squeeze(1)
+        loss = self.compute_loss(y_hat, y)
+        self.test_f1(y_hat, y)
+        self.test_avg_precision(y_hat, y)
+        self.test_precision(y_hat, y)
+        self.test_recall(y_hat, y)
+        self.test_iou(y_hat, y)
+        self.log("test_loss", loss, prog_bar=True)
+        self.log_dict(
+            {
+                "test_f1": self.test_f1,
+                "test_AP": self.test_avg_precision,
+                "test_precision": self.test_precision,
+                "test_recall": self.test_recall,
+                "test_iou": self.test_iou,
+            }
+        )
+        return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(list(self.Ft.parameters()) + list(self.D0.parameters()), lr=1e-4)
+        params = [p for p in self.parameters() if p.requires_grad]
+        return torch.optim.Adam(params, lr=self.lr)
+
+    # ============================================================
+    # Helpers
+    # ============================================================
+    def _weighted_loss(self, logits, y, deep_feat):
+        """
+        Compute per-sample loss using the same per-pixel loss as BaseModel,
+        then weight by IWAN p_target.
+        """
+        y = y.float()
+        per_pixel: torch.Tensor
+
+        if self.hparams.loss_function == "Focal":
+            per_pixel = sigmoid_focal_loss(
+                logits,
+                y.unsqueeze(1),
+                alpha=1 - self.hparams.pos_class_weight,
+                gamma=self.gamma_focal,
+                reduction="none",
+            )
+        else:
+            pos_w = torch.tensor([self.hparams.pos_class_weight], device=logits.device)
+            bce = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction="none")
+            per_pixel = bce(logits, y.unsqueeze(1))
+
+        per_sample = per_pixel.mean(dim=(1, 2, 3))
+        w = self.compute_importance(deep_feat)
+        loss = (w * per_sample).mean()
+        return loss, w

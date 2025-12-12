@@ -1,0 +1,36 @@
+project: wildfire-resnet18-domainadaptation-stage3-initialweight
+command:
+  - ${env}
+  - python
+  - ${program}
+  - -c
+  - cfgs/unet/res18_monotemporal.yaml
+  - --trainer
+  - cfgs/trainer_domain_adaptation_stage3.yaml
+  - --data
+  - cfgs/data_monotemporal_full_features.yaml
+  - ${args}
+method: grid
+metric:
+  goal: maximize
+  name: test_AP
+parameters:
+  model.class_path:
+    value: models.DomainAdpatation.IWANStage3_Adaptation.IWANStage3_Adaptation
+  model.save_dir:
+    value: "/develop/results/"
+
+  data.data_fold_id:
+    values: 6  # e.g., 5 if that fold omits 2019
+  data.additional_data:
+    value: true
+  # keep other data params as needed…
+
+  do_train:
+    value: true
+
+  do_test:
+    value: true
+
+  do_validate:
+    value: false     

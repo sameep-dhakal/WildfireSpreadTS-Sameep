@@ -1,239 +1,239 @@
-import os
-import torch
-import wandb
+# import os
+# import torch
+# import wandb
 
-from pytorch_lightning.cli import LightningCLI
-from pytorch_lightning.utilities import rank_zero_only
+# from pytorch_lightning.cli import LightningCLI
+# from pytorch_lightning.utilities import rank_zero_only
 
-from dataloader.FireSpreadDataModule import FireSpreadDataModule
-from dataloader.FireSpreadDataset import FireSpreadDataset
-from dataloader.utils import get_means_stds_missing_values
+# from dataloader.FireSpreadDataModule import FireSpreadDataModule
+# from dataloader.FireSpreadDataset import FireSpreadDataset
+# from dataloader.utils import get_means_stds_missing_values
 
-from models import SMPModel, BaseModel, ConvLSTMLightning, LogisticRegression  # noqa
+# from models import SMPModel, BaseModel, ConvLSTMLightning, LogisticRegression  # noqa
 
-os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-torch.set_float32_matmul_precision('high')
-
-
-# =====================================================================
-# CUSTOM CLI
-# =====================================================================
-class MyLightningCLI(LightningCLI):
-
-    # =========================================================
-    # STAGE-1 CKPT LOAD DIRS (PRETRAINED UNET)
-    # These folders ALREADY contain Stage-1 .ckpt files
-    # =========================================================
-    STAGE1_CKPT_DIR = {
-        0: "/develop/results/wildfire-progression/gvuu0kii/checkpoints",
-        1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
-        2: "/develop/results/wildfire-progression/zsqvrj9f/checkpoints",
-        3: "/develop/results/wildfire-progression/04zyztgf/checkpoints",
-        4: "/develop/results/wildfire-progression/kf5e2z7i/checkpoints",
-        5: "/develop/results/wildfire-progression/z4fpm67c/checkpoints",
-        6: "/develop/results/wildfire-progression/xu8nf4pr/checkpoints",
-        7: "/develop/results/wildfire-progression/3gx6vn1b/checkpoints",
-        8: "/develop/results/wildfire-progression/gbco149i/checkpoints",
-        9: "/develop/results/wildfire-progression/u2jopt8y/checkpoints",
-        10: "/develop/results/wildfire-progression/asvp9e1m/checkpoints",
-        11: "/develop/results/wildfire-progression/6l528lvo/checkpoints",
-        12: "/develop/results/wildfire-progression/o7t67rsw/checkpoints",
-
-    }
+# os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+# torch.set_float32_matmul_precision('high')
 
 
-    STAGE1_CKPT_BY_YEAR = {
-    2012: "/develop/results/wildfire-progression/gvmlnd1k/checkpoints",
-    2013: "/develop/results/wildfire-progression/du8c545g/checkpoints",
-    2014: "/develop/results/wildfire-progression/z01uo2hd/checkpoints",
-    2015: "/develop/results/wildfire-progression/pqrmt6x3/checkpoints",
-    2016: "/develop/results/wildfire-progression/z8qfst4r/checkpoints",
-    2017: "/develop/results/wildfire-progression/le2xi881/checkpoints",
-    2018: "/develop/results/wildfire-progression/cwdakisi/checkpoints",
-    2019: "/develop/results/wildfire-progression/8qhqnjch/checkpoints",
-    2020: "/develop/results/wildfire-progression/p6j9l0th/checkpoints",
-    2021: "/develop/results/wildfire-progression/2ilct1o4/checkpoints",
-    2022: "/develop/results/wildfire-progression/l9a1y4dy/checkpoints",
-    2023: "/develop/results/wildfire-progression/pfr5ycr0/checkpoints",
-    }
+# # =====================================================================
+# # CUSTOM CLI
+# # =====================================================================
+# class MyLightningCLI(LightningCLI):
 
-    # =========================================================
-    # STAGE-2 SAVE DIRS (WHERE IWAN STAGE-2 CHECKPOINTS WILL BE SAVED)
-    # =========================================================
-    STAGE2_SAVE_DIR = {
-        0: "/develop/results/domain_adaptation_stage2_outputs/fold0",
-        1: "/develop/results/domain_adaptation_stage2_outputs/fold1",
-        2: "/develop/results/domain_adaptation_stage2_outputs/fold2",
-        3: "/develop/results/domain_adaptation_stage2_outputs/fold3",
-    }
+#     # =========================================================
+#     # STAGE-1 CKPT LOAD DIRS (PRETRAINED UNET)
+#     # These folders ALREADY contain Stage-1 .ckpt files
+#     # =========================================================
+#     STAGE1_CKPT_DIR = {
+#         0: "/develop/results/wildfire-progression/gvuu0kii/checkpoints",
+#         1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
+#         2: "/develop/results/wildfire-progression/zsqvrj9f/checkpoints",
+#         3: "/develop/results/wildfire-progression/04zyztgf/checkpoints",
+#         4: "/develop/results/wildfire-progression/kf5e2z7i/checkpoints",
+#         5: "/develop/results/wildfire-progression/z4fpm67c/checkpoints",
+#         6: "/develop/results/wildfire-progression/xu8nf4pr/checkpoints",
+#         7: "/develop/results/wildfire-progression/3gx6vn1b/checkpoints",
+#         8: "/develop/results/wildfire-progression/gbco149i/checkpoints",
+#         9: "/develop/results/wildfire-progression/u2jopt8y/checkpoints",
+#         10: "/develop/results/wildfire-progression/asvp9e1m/checkpoints",
+#         11: "/develop/results/wildfire-progression/6l528lvo/checkpoints",
+#         12: "/develop/results/wildfire-progression/o7t67rsw/checkpoints",
 
-    def add_arguments_to_parser(self, parser):
-        parser.link_arguments("trainer.default_root_dir",
-                              "trainer.logger.init_args.save_dir")
+#     }
 
-        parser.link_arguments("model.class_path",
-                              "trainer.logger.init_args.name")
 
-        parser.add_argument("--do_train", type=bool)
-        parser.add_argument("--do_predict", type=bool)
-        parser.add_argument("--do_test", type=bool)
-        parser.add_argument("--do_validate", type=bool, default=False)
-        parser.add_argument("--ckpt_path", type=str, default=None)
+#     STAGE1_CKPT_BY_YEAR = {
+#     2012: "/develop/results/wildfire-progression/gvmlnd1k/checkpoints",
+#     2013: "/develop/results/wildfire-progression/du8c545g/checkpoints",
+#     2014: "/develop/results/wildfire-progression/z01uo2hd/checkpoints",
+#     2015: "/develop/results/wildfire-progression/pqrmt6x3/checkpoints",
+#     2016: "/develop/results/wildfire-progression/z8qfst4r/checkpoints",
+#     2017: "/develop/results/wildfire-progression/le2xi881/checkpoints",
+#     2018: "/develop/results/wildfire-progression/cwdakisi/checkpoints",
+#     2019: "/develop/results/wildfire-progression/8qhqnjch/checkpoints",
+#     2020: "/develop/results/wildfire-progression/p6j9l0th/checkpoints",
+#     2021: "/develop/results/wildfire-progression/2ilct1o4/checkpoints",
+#     2022: "/develop/results/wildfire-progression/l9a1y4dy/checkpoints",
+#     2023: "/develop/results/wildfire-progression/pfr5ycr0/checkpoints",
+#     }
 
-    # -----------------------------------------------------------------
-    # BEFORE MODEL / DATA / TRAINER CREATION
-    # -----------------------------------------------------------------
-    def before_instantiate_classes(self):
-        # determine number of channels
-        n_features = FireSpreadDataset.get_n_features(
-            self.config.data.n_leading_observations,
-            self.config.data.features_to_keep,
-            self.config.data.remove_duplicate_features,
-        )
-        self.config.model.init_args.n_channels = n_features
+#     # =========================================================
+#     # STAGE-2 SAVE DIRS (WHERE IWAN STAGE-2 CHECKPOINTS WILL BE SAVED)
+#     # =========================================================
+#     STAGE2_SAVE_DIR = {
+#         0: "/develop/results/domain_adaptation_stage2_outputs/fold0",
+#         1: "/develop/results/domain_adaptation_stage2_outputs/fold1",
+#         2: "/develop/results/domain_adaptation_stage2_outputs/fold2",
+#         3: "/develop/results/domain_adaptation_stage2_outputs/fold3",
+#     }
 
-        # -------------------------------
-        # FETCH SOURCE YEAR / FOLD CORRECTLY
-        # -------------------------------
-        # Align with the datamodule split: use the fold id to get train_years
-        data_fold_id = int(self.config.data.data_fold_id)
-        train_years, _, _ = FireSpreadDataModule.split_fires(
-            data_fold_id,
-            self.config.data.additional_data,
-        )
+#     def add_arguments_to_parser(self, parser):
+#         parser.link_arguments("trainer.default_root_dir",
+#                               "trainer.logger.init_args.save_dir")
 
-        # For domain adaptation we train on all years in the fold (multi-source) and
-        # treat the left-out year as the target. Use the fold’s ckpt, not per-year.
-        source_year = int(train_years[0])  # representative (used for naming only)
-        if self.config.data.additional_data:
-            all_years = set(range(2012, 2024))
-            missing_years = sorted(list(all_years - set(train_years)))
-            if len(missing_years) == 1:
-                target_year = missing_years[0]
-                self.config.data.target_year = target_year
-                # Limit Stage-2 to the inferred target year
-                self.config.model.init_args.all_target_years = [target_year]
+#         parser.link_arguments("model.class_path",
+#                               "trainer.logger.init_args.name")
 
-        # Expose the resolved source_year (representative) in the config
-        self.config.data.source_year = source_year
-        self.config.model.init_args.source_year = source_year
+#         parser.add_argument("--do_train", type=bool)
+#         parser.add_argument("--do_predict", type=bool)
+#         parser.add_argument("--do_test", type=bool)
+#         parser.add_argument("--do_validate", type=bool, default=False)
+#         parser.add_argument("--ckpt_path", type=str, default=None)
 
-        _, _, missing_values_rates = get_means_stds_missing_values(train_years)
-        fire_rate = 1 - missing_values_rates[-1]
-        self.config.model.init_args.pos_class_weight = float(1 / fire_rate)
+#     # -----------------------------------------------------------------
+#     # BEFORE MODEL / DATA / TRAINER CREATION
+#     # -----------------------------------------------------------------
+#     def before_instantiate_classes(self):
+#         # determine number of channels
+#         n_features = FireSpreadDataset.get_n_features(
+#             self.config.data.n_leading_observations,
+#             self.config.data.features_to_keep,
+#             self.config.data.remove_duplicate_features,
+#         )
+#         self.config.model.init_args.n_channels = n_features
 
-        # -------------------------------
-        # map Stage-1 checkpoint by fold (multi-year source)
-        # -------------------------------
-        stage1_dir = self.STAGE1_CKPT_DIR.get(data_fold_id)
-        if stage1_dir is None:
-            raise ValueError(f"No Stage-1 checkpoint dir for fold={data_fold_id}")
-        self.config.model.init_args.ckpt_dir = stage1_dir
+#         # -------------------------------
+#         # FETCH SOURCE YEAR / FOLD CORRECTLY
+#         # -------------------------------
+#         # Align with the datamodule split: use the fold id to get train_years
+#         data_fold_id = int(self.config.data.data_fold_id)
+#         train_years, _, _ = FireSpreadDataModule.split_fires(
+#             data_fold_id,
+#             self.config.data.additional_data,
+#         )
 
-        print(f"🔥 Using Stage-1 encoder for fold {data_fold_id}:")
-        print(f"   {stage1_dir}\n")
+#         # For domain adaptation we train on all years in the fold (multi-source) and
+#         # treat the left-out year as the target. Use the fold’s ckpt, not per-year.
+#         source_year = int(train_years[0])  # representative (used for naming only)
+#         if self.config.data.additional_data:
+#             all_years = set(range(2012, 2024))
+#             missing_years = sorted(list(all_years - set(train_years)))
+#             if len(missing_years) == 1:
+#                 target_year = missing_years[0]
+#                 self.config.data.target_year = target_year
+#                 # Limit Stage-2 to the inferred target year
+#                 self.config.model.init_args.all_target_years = [target_year]
 
-        # -------------------------------
-        # map Stage-2 save directory
-        # -------------------------------
-        save_dir = self.STAGE2_SAVE_DIR.get(
-            data_fold_id, f"/develop/results/"
-        )
-        os.makedirs(save_dir, exist_ok=True)
+#         # Expose the resolved source_year (representative) in the config
+#         self.config.data.source_year = source_year
+#         self.config.model.init_args.source_year = source_year
 
-        self.config.trainer.default_root_dir = save_dir
-        print(f"💾 Stage-2 checkpoints will be saved to:\n{save_dir}\n")
+#         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
+#         fire_rate = 1 - missing_values_rates[-1]
+#         self.config.model.init_args.pos_class_weight = float(1 / fire_rate)
+
+#         # -------------------------------
+#         # map Stage-1 checkpoint by fold (multi-year source)
+#         # -------------------------------
+#         stage1_dir = self.STAGE1_CKPT_DIR.get(data_fold_id)
+#         if stage1_dir is None:
+#             raise ValueError(f"No Stage-1 checkpoint dir for fold={data_fold_id}")
+#         self.config.model.init_args.ckpt_dir = stage1_dir
+
+#         print(f"🔥 Using Stage-1 encoder for fold {data_fold_id}:")
+#         print(f"   {stage1_dir}\n")
+
+#         # -------------------------------
+#         # map Stage-2 save directory
+#         # -------------------------------
+#         save_dir = self.STAGE2_SAVE_DIR.get(
+#             data_fold_id, f"/develop/results/domain_adaptation_stage2_outputs/{data_fold_id}"
+#         )
+#         os.makedirs(save_dir, exist_ok=True)
+
+#         self.config.trainer.default_root_dir = save_dir
+#         print(f"💾 Stage-2 checkpoints will be saved to:\n{save_dir}\n")
 
    
-   # -----------------------------------------------------------------
-    def before_fit(self):
-        self.wandb_setup()
+#    # -----------------------------------------------------------------
+#     def before_fit(self):
+#         self.wandb_setup()
 
-    def before_test(self):
-        self.wandb_setup()
+#     def before_test(self):
+#         self.wandb_setup()
 
-    def before_validate(self):
-        self.wandb_setup()
+#     def before_validate(self):
+#         self.wandb_setup()
 
-    # -----------------------------------------------------------------
-    @rank_zero_only
-    def wandb_setup(self):
-        config_file = os.path.join(wandb.run.dir, "cli_config.yaml")
+#     # -----------------------------------------------------------------
+#     @rank_zero_only
+#     def wandb_setup(self):
+#         config_file = os.path.join(wandb.run.dir, "cli_config.yaml")
 
-        cfg = self.parser.dump(self.config, skip_none=False)
-        with open(config_file, "w") as f:
-            f.write(cfg)
+#         cfg = self.parser.dump(self.config, skip_none=False)
+#         with open(config_file, "w") as f:
+#             f.write(cfg)
 
-        wandb.save(config_file, policy="now", base_path=wandb.run.dir)
+#         wandb.save(config_file, policy="now", base_path=wandb.run.dir)
 
-        # wandb.define_metric("train_loss_epoch", summary="min")
-        # wandb.define_metric("val_loss", summary="min")
-        # wandb.define_metric("train_f1_epoch", summary="max")
-        # wandb.define_metric("val_f1", summary="max")
-        # wandb.define_metric("val_avg_precision", summary="max")
+#         # wandb.define_metric("train_loss_epoch", summary="min")
+#         # wandb.define_metric("val_loss", summary="min")
+#         # wandb.define_metric("train_f1_epoch", summary="max")
+#         # wandb.define_metric("val_f1", summary="max")
+#         # wandb.define_metric("val_avg_precision", summary="max")
 
-        wandb.define_metric("train_loss_D_epoch", summary="min")
-        wandb.define_metric("train_domain_acc_epoch", summary="max")
-        wandb.define_metric("score_D_epoch", summary="min")
+#         wandb.define_metric("train_loss_D_epoch", summary="min")
+#         wandb.define_metric("train_domain_acc_epoch", summary="max")
+#         wandb.define_metric("score_D_epoch", summary="min")
 
 
 
-# =====================================================================
-# MAIN ENTRY
-# =====================================================================
-def main():
+# # =====================================================================
+# # MAIN ENTRY
+# # =====================================================================
+# def main():
 
-    cli = MyLightningCLI(
-        BaseModel,
-        FireSpreadDataModule,
-        subclass_mode_model=True,
-        save_config_kwargs={"overwrite": True},
-        parser_kwargs={"parser_mode": "yaml"},
-        run=False
-    )
-    # cli.wandb_setup()
+#     cli = MyLightningCLI(
+#         BaseModel,
+#         FireSpreadDataModule,
+#         subclass_mode_model=True,
+#         save_config_kwargs={"overwrite": True},
+#         parser_kwargs={"parser_mode": "yaml"},
+#         run=False
+#     )
+#     # cli.wandb_setup()
 
-    # if cli.config.do_train:
-    #     cli.trainer.fit(cli.model, cli.datamodule,
-    #                     ckpt_path=cli.config.ckpt_path)
+#     # if cli.config.do_train:
+#     #     cli.trainer.fit(cli.model, cli.datamodule,
+#     #                     ckpt_path=cli.config.ckpt_path)
         
-    if cli.config.do_train:
-        print("\n⚡ Running IWAN Stage-2 manually (no trainer.fit)…\n")
-        cli.model.run_full_iwan(cli.datamodule)
-        return  # IMPORTANT: skip all Lightning testing/prediction
+#     if cli.config.do_train:
+#         print("\n⚡ Running IWAN Stage-2 manually (no trainer.fit)…\n")
+#         cli.model.run_full_iwan(cli.datamodule)
+#         return  # IMPORTANT: skip all Lightning testing/prediction
     
 
-    ckpt = cli.config.ckpt_path
-    if cli.config.do_train:
-        ckpt = "best"
+#     ckpt = cli.config.ckpt_path
+#     if cli.config.do_train:
+#         ckpt = "best"
 
-    if cli.config.do_validate:
-        cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt)
+#     if cli.config.do_validate:
+#         cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt)
 
-    if cli.config.do_test:
-        cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
+#     if cli.config.do_test:
+#         cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
 
-    if cli.config.do_predict:
-        print(f"Loading checkpoint from: {ckpt}")
-        preds = cli.trainer.predict(cli.model, cli.datamodule, ckpt_path=ckpt)
+#     if cli.config.do_predict:
+#         print(f"Loading checkpoint from: {ckpt}")
+#         preds = cli.trainer.predict(cli.model, cli.datamodule, ckpt_path=ckpt)
 
-        x_af = torch.cat([p[0][:, -1, :, :].squeeze() for p in preds], dim=0)
-        y = torch.cat([p[1] for p in preds], dim=0)
-        y_hat = torch.cat([p[2] for p in preds], dim=0)
+#         x_af = torch.cat([p[0][:, -1, :, :].squeeze() for p in preds], dim=0)
+#         y = torch.cat([p[1] for p in preds], dim=0)
+#         y_hat = torch.cat([p[2] for p in preds], dim=0)
 
-        combined = torch.cat(
-            [x_af.unsqueeze(0), y_hat.unsqueeze(0), y.unsqueeze(0)], dim=0
-        )
+#         combined = torch.cat(
+#             [x_af.unsqueeze(0), y_hat.unsqueeze(0), y.unsqueeze(0)], dim=0
+#         )
 
-        out_file = os.path.join(
-            cli.config.trainer.default_root_dir,
-            f"predictions_{wandb.run.id}.pt"
-        )
-        torch.save(combined, out_file)
+#         out_file = os.path.join(
+#             cli.config.trainer.default_root_dir,
+#             f"predictions_{wandb.run.id}.pt"
+#         )
+#         torch.save(combined, out_file)
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
 
 
 # from pytorch_lightning.utilities import rank_zero_only
@@ -373,203 +373,186 @@ if __name__ == "__main__":
 ##################################################
 ##################################################
 
+import os
+import torch
+import wandb
 
-# import os
-# import torch
-# import wandb
+from pytorch_lightning.cli import LightningCLI
+from pytorch_lightning.utilities import rank_zero_only
 
-# from pytorch_lightning.cli import LightningCLI
-# from pytorch_lightning.utilities import rank_zero_only
+from dataloader.FireSpreadDataModule import FireSpreadDataModule
+from dataloader.FireSpreadDataset import FireSpreadDataset
+from dataloader.utils import get_means_stds_missing_values
 
-# from dataloader.FireSpreadDataModule import FireSpreadDataModule
-# from dataloader.FireSpreadDataset import FireSpreadDataset
-# from dataloader.utils import get_means_stds_missing_values
+from models import BaseModel  # LightningCLI will load subclasses via class_path
+from models.DomainAdpatation.IWANStage3_Adaptation import IWANStage3_Adaptation
 
-# from models import SMPModel, BaseModel, ConvLSTMLightning, LogisticRegression  # noqa
-# from models.DomainAdpatation.IWANStage3_Adaptation import IWANStage3  # <- Stage-3
-
-# os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
-# torch.set_float32_matmul_precision('high')
-
-
-# class MyLightningCLI(LightningCLI):
-#     # Stage-1 checkpoints by fold
-#     STAGE1_CKPT_DIR = {
-#         0: "/develop/results/wildfire-progression/gvuu0kii/checkpoints",
-#         1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
-#         2: "/develop/results/wildfire-progression/zsqvrj9f/checkpoints",
-#         3: "/develop/results/wildfire-progression/04zyztgf/checkpoints",
-#         4: "/develop/results/wildfire-progression/kf5e2z7i/checkpoints",
-#         5: "/develop/results/wildfire-progression/z4fpm67c/checkpoints",
-#         6: "/develop/results/wildfire-progression/xu8nf4pr/checkpoints",
-#         7: "/develop/results/wildfire-progression/3gx6vn1b/checkpoints",
-#         8: "/develop/results/wildfire-progression/gbco149i/checkpoints",
-#         9: "/develop/results/wildfire-progression/u2jopt8y/checkpoints",
-#         10: "/develop/results/wildfire-progression/asvp9e1m/checkpoints",
-#         11: "/develop/results/wildfire-progression/6l528lvo/checkpoints",
-#         12: "/develop/results/wildfire-progression/o7t67rsw/checkpoints",
-#     }
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
+torch.set_float32_matmul_precision("high")
 
 
-#      # Stage-2 checkpoint directory by fold (adjust if needed)
-#     STAGE2_CKPT_DIR = {
-#         0: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2012.ckpt",
-#         1: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
-#         2: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2014.ckpt",
-#         3: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2015.ckpt",
-#         4: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2016.ckpt',
-#         5: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2017.ckpt',
-#         6: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2018.ckpt',
-#         7: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2019.ckpt',
-#         8: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2020.ckpt',
-#         9: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2021.ckpt',
-#         10: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2022.ckpt',
-#         11: '/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2023.ckpt',
-#     }
-
-#     # Stage-2 save dirs (unchanged)
-#     STAGE2_SAVE_DIR = {
-#         0: "/develop/results/domain_adaptation_stage2_outputs/fold0",
-#         1: "/develop/results/domain_adaptation_stage2_outputs/fold1",
-#         2: "/develop/results/domain_adaptation_stage2_outputs/fold2",
-#         3: "/develop/results/domain_adaptation_stage2_outputs/fold3",
-#     }
-
-#     def add_arguments_to_parser(self, parser):
-#         parser.link_arguments("trainer.default_root_dir",
-#                               "trainer.logger.init_args.save_dir")
-#         parser.link_arguments("model.class_path",
-#                               "trainer.logger.init_args.name")
-#         parser.add_argument("--do_train", type=bool)
-#         parser.add_argument("--do_predict", type=bool)
-#         parser.add_argument("--do_test", type=bool)
-#         parser.add_argument("--do_validate", type=bool, default=False)
-#         parser.add_argument("--ckpt_path", type=str, default=None)
-
-#     def before_instantiate_classes(self):
-#         # determine number of channels
-#         n_features = FireSpreadDataset.get_n_features(
-#             self.config.data.n_leading_observations,
-#             self.config.data.features_to_keep,
-#             self.config.data.remove_duplicate_features,
-#         )
-#         self.config.model.init_args.n_channels = n_features
-
-#         # split years
-#         data_fold_id = int(self.config.data.data_fold_id)
-#         train_years, _, _ = FireSpreadDataModule.split_fires(
-#             data_fold_id,
-#             self.config.data.additional_data,
-#         )
-
-#         source_year = int(train_years[0])  # representative for naming only
-#         if self.config.data.additional_data:
-#             all_years = set(range(2012, 2024))
-#             missing_years = sorted(list(all_years - set(train_years)))
-#             if len(missing_years) == 1:
-#                 target_year = missing_years[0]
-#                 self.config.data.target_year = target_year
-#                 self.config.model.init_args.all_target_years = [target_year]
-#             else:
-#                 target_year = None
-#         else:
-#             target_year = None
-
-#         self.config.data.source_year = source_year
-#         self.config.model.init_args.source_year = source_year
-
-#         _, _, missing_values_rates = get_means_stds_missing_values(train_years)
-#         fire_rate = 1 - missing_values_rates[-1]
-#         self.config.model.init_args.pos_class_weight = float(1 / fire_rate)
-
-#         # Stage-1 checkpoint
-#         stage1_dir = self.STAGE1_CKPT_DIR.get(data_fold_id)
-#         if stage1_dir is None:
-#             raise ValueError(f"No Stage-1 checkpoint dir for fold={data_fold_id}")
-#         # choose first .ckpt file inside
-#         stage1_ckpt = self._first_ckpt(stage1_dir)
-#         self.config.model.init_args.stage1_ckpt = stage1_ckpt
-#         print(f"🔥 Using Stage-1 ckpt for fold {data_fold_id}: {stage1_ckpt}")
-
-#         # Stage-2 checkpoint (per fold, per target year)
-#         stage2_dir = self.STAGE2_CKPT_DIR.get(data_fold_id)
-#         if stage2_dir is None:
-#             raise ValueError(f"No Stage-2 checkpoint dir for fold={data_fold_id}")
-#         stage2_ckpt = self._first_ckpt(stage2_dir, target_year)
-#         self.config.model.init_args.stage2_ckpt = stage2_ckpt
-#         print(f"🔥 Using Stage-2 ckpt for fold {data_fold_id}: {stage2_ckpt}")
-
-#         # Stage-2 save dir
-#         save_dir = self.STAGE2_SAVE_DIR.get(
-#             data_fold_id, f"/develop/results/domain_adaptation_stage2_outputs/{data_fold_id}"
-#         )
-#         os.makedirs(save_dir, exist_ok=True)
-#         self.config.trainer.default_root_dir = save_dir
-#         print(f"💾 Stage-2 outputs go to:\n{save_dir}\n")
-
-#     def _first_ckpt(self, directory, target_year=None):
-#         # optionally filter by target_year pattern
-#         if not os.path.isdir(directory):
-#             raise FileNotFoundError(f"Checkpoint directory not found: {directory}")
-#         files = [f for f in os.listdir(directory) if f.endswith(".ckpt")]
-#         if target_year is not None:
-#             files = [f for f in files if str(target_year) in f] or files
-#         if not files:
-#             raise FileNotFoundError(f"No .ckpt files in {directory}")
-#         return os.path.join(directory, sorted(files)[0])
-
-#     def before_fit(self):
-#         self.wandb_setup()
-
-#     def before_test(self):
-#         self.wandb_setup()
-
-#     def before_validate(self):
-#         self.wandb_setup()
-
-#     @rank_zero_only
-#     def wandb_setup(self):
-#         config_file = os.path.join(wandb.run.dir, "cli_config.yaml")
-#         cfg = self.parser.dump(self.config, skip_none=False)
-#         with open(config_file, "w") as f:
-#             f.write(cfg)
-#         wandb.save(config_file, policy="now", base_path=wandb.run.dir)
-#         wandb.define_metric("train_loss_D_epoch", summary="min")
-#         wandb.define_metric("train_domain_acc_epoch", summary="max")
-#         wandb.define_metric("score_D_epoch", summary="min")
+def first_ckpt(path, target_year=None):
+    """Return the first .ckpt in a directory, optionally filtered by target year substring."""
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Checkpoint directory not found: {path}")
+    files = [f for f in os.listdir(path) if f.endswith(".ckpt")]
+    if target_year is not None:
+        filtered = [f for f in files if str(target_year) in f]
+        if filtered:
+            files = filtered
+    if not files:
+        raise FileNotFoundError(f"No .ckpt files in {path}")
+    return os.path.join(path, sorted(files)[0])
 
 
-# def main():
-#     cli = MyLightningCLI(
-#         IWANStage3,
-#         FireSpreadDataModule,
-#         subclass_mode_model=True,
-#         save_config_kwargs={"overwrite": True},
-#         parser_kwargs={"parser_mode": "yaml"},
-#         run=False,
-#     )
+class MyLightningCLI(LightningCLI):
+    # Stage-1 checkpoints by fold
+    STAGE1_CKPT_DIR = {
+        0: "/develop/results/wildfire-progression/gvuu0kii/checkpoints",
+        1: "/develop/results/wildfire-progression/hvsbcl8a/checkpoints",
+        2: "/develop/results/wildfire-progression/zsqvrj9f/checkpoints",
+        3: "/develop/results/wildfire-progression/04zyztgf/checkpoints",
+        4: "/develop/results/wildfire-progression/kf5e2z7i/checkpoints",
+        5: "/develop/results/wildfire-progression/z4fpm67c/checkpoints",
+        6: "/develop/results/wildfire-progression/xu8nf4pr/checkpoints",
+        7: "/develop/results/wildfire-progression/3gx6vn1b/checkpoints",
+        8: "/develop/results/wildfire-progression/gbco149i/checkpoints",
+        9: "/develop/results/wildfire-progression/u2jopt8y/checkpoints",
+        10: "/develop/results/wildfire-progression/asvp9e1m/checkpoints",
+        11: "/develop/results/wildfire-progression/6l528lvo/checkpoints",
+        12: "/develop/results/wildfire-progression/o7t67rsw/checkpoints",
+    }
 
-#     if cli.config.do_train:
-#         cli.trainer.fit(cli.model, cli.datamodule, ckpt_path=cli.config.ckpt_path)
-#         return
+    # Stage-2 checkpoint per fold/target year (single ckpt file)
+    STAGE2_CKPT_PATH = {
+        0: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2012.ckpt",
+        1: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2013.ckpt",
+        2: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2014.ckpt",
+        3: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2015.ckpt",
+        4: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2016.ckpt",
+        5: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2017.ckpt",
+        6: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2018.ckpt",
+        7: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2019.ckpt",
+        8: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2020.ckpt",
+        9: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2021.ckpt",
+        10: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2022.ckpt",
+        11: "/develop/results/stage2_checkpoints/iwan_stage2_CNNmodel_target_year2023.ckpt",
+    }
 
-#     ckpt = cli.config.ckpt_path or "best"
+    def add_arguments_to_parser(self, parser):
+        parser.link_arguments("trainer.default_root_dir", "trainer.logger.init_args.save_dir")
+        parser.link_arguments("model.class_path", "trainer.logger.init_args.name")
+        parser.add_argument("--do_train", type=bool)
+        parser.add_argument("--do_predict", type=bool)
+        parser.add_argument("--do_test", type=bool)
+        parser.add_argument("--do_validate", type=bool, default=False)
+        parser.add_argument("--ckpt_path", type=str, default=None)
 
-#     if cli.config.do_validate:
-#         cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt)
+    def before_instantiate_classes(self):
+        # Infer channels
+        n_features = FireSpreadDataset.get_n_features(
+            self.config.data.n_leading_observations,
+            self.config.data.features_to_keep,
+            self.config.data.remove_duplicate_features,
+        )
+        self.config.model.init_args.n_channels = n_features
 
-#     if cli.config.do_test:
-#         cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
+        # Resolve train/test years
+        data_fold_id = int(self.config.data.data_fold_id)
+        train_years, _, _ = FireSpreadDataModule.split_fires(
+            data_fold_id,
+            self.config.data.additional_data,
+        )
 
-#     if cli.config.do_predict:
-#         preds = cli.trainer.predict(cli.model, cli.datamodule, ckpt_path=ckpt)
-#         x_af = torch.cat([p[0][:, -1, :, :].squeeze() for p in preds], dim=0)
-#         y = torch.cat([p[1] for p in preds], dim=0)
-#         y_hat = torch.cat([p[2] for p in preds], dim=0)
-#         combined = torch.cat([x_af.unsqueeze(0), y_hat.unsqueeze(0), y.unsqueeze(0)], dim=0)
-#         out_file = os.path.join(cli.config.trainer.default_root_dir, f"predictions_{wandb.run.id}.pt")
-#         torch.save(combined, out_file)
+        source_year = int(train_years[0])
+        if self.config.data.additional_data:
+            all_years = set(range(2012, 2024))
+            missing_years = sorted(list(all_years - set(train_years)))
+            target_year = missing_years[0] if len(missing_years) == 1 else None
+            self.config.data.target_year = target_year
+            self.config.model.init_args.all_target_years = [target_year] if target_year else None
+        else:
+            target_year = None
+
+        self.config.data.source_year = source_year
+        self.config.model.init_args.source_year = source_year
+
+        # class weight
+        _, _, missing_values_rates = get_means_stds_missing_values(train_years)
+        fire_rate = 1 - missing_values_rates[-1]
+        self.config.model.init_args.pos_class_weight = float(1 / fire_rate)
+
+        model_class = str(self.config.model.class_path)
+
+        # Stage-3: needs explicit Stage-1 + Stage-2 ckpts
+        if "IWANStage3" in model_class:
+            stage1_dir = self.STAGE1_CKPT_DIR.get(data_fold_id)
+            if stage1_dir is None:
+                raise ValueError(f"No Stage-1 checkpoint dir for fold={data_fold_id}")
+            self.config.model.init_args.stage1_ckpt = first_ckpt(stage1_dir)
+
+            stage2_ckpt = self.STAGE2_CKPT_PATH.get(data_fold_id)
+            if stage2_ckpt is None:
+                raise ValueError(f"No Stage-2 checkpoint for fold={data_fold_id}")
+            self.config.model.init_args.stage2_ckpt = stage2_ckpt
+
+            # Output dir
+            save_dir = self.config.trainer.default_root_dir or "/develop/results/"
+            os.makedirs(save_dir, exist_ok=True)
+            print(f"🔥 Stage-1 ckpt: {self.config.model.init_args.stage1_ckpt}")
+            print(f"🔥 Stage-2 ckpt: {self.config.model.init_args.stage2_ckpt}")
+            print(f"💾 Outputs: {save_dir}\n")
+
+    def before_fit(self):
+        self._wandb_setup()
+
+    def before_test(self):
+        self._wandb_setup()
+
+    def before_validate(self):
+        self._wandb_setup()
+
+    @rank_zero_only
+    def _wandb_setup(self):
+        if wandb.run is None:
+            return
+        config_file = os.path.join(wandb.run.dir, "cli_config.yaml")
+        cfg = self.parser.dump(self.config, skip_none=False)
+        with open(config_file, "w") as f:
+            f.write(cfg)
+        wandb.save(config_file, policy="now", base_path=wandb.run.dir)
 
 
-# if __name__ == "__main__":
-#     main()
+def main():
+    cli = MyLightningCLI(
+        BaseModel,
+        FireSpreadDataModule,
+        subclass_mode_model=True,
+        save_config_kwargs={"overwrite": True},
+        parser_kwargs={"parser_mode": "yaml"},
+        run=False,
+    )
+
+    if cli.config.do_train:
+        cli.trainer.fit(cli.model, cli.datamodule, ckpt_path=cli.config.ckpt_path)
+
+    ckpt = cli.config.ckpt_path or "best"
+
+    if cli.config.do_validate:
+        cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt)
+
+    if cli.config.do_test:
+        cli.trainer.test(cli.model, cli.datamodule, ckpt_path=ckpt)
+
+    if cli.config.do_predict:
+        preds = cli.trainer.predict(cli.model, cli.datamodule, ckpt_path=ckpt)
+        x_af = torch.cat([p[0][:, -1, :, :].squeeze() for p in preds], dim=0)
+        y = torch.cat([p[1] for p in preds], dim=0)
+        y_hat = torch.cat([p[2] for p in preds], dim=0)
+        combined = torch.cat([x_af.unsqueeze(0), y_hat.unsqueeze(0), y.unsqueeze(0)], dim=0)
+        out_file = os.path.join(cli.config.trainer.default_root_dir, f"predictions_{wandb.run.id}.pt")
+        torch.save(combined, out_file)
+
+
+if __name__ == "__main__":
+    main()

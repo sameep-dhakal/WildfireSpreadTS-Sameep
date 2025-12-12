@@ -269,14 +269,13 @@ class FireSpreadDataModule(LightningDataModule):
                 (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2022, 2023),
                 (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2023),
                 (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022),
-                (2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023),
-
             ]
 
-            # # --- IMPORTANT: Update the slicing to match the new 8-year training set ---
+            # Use fold years as train; hold out the remaining year(s) as test (target)
             train_years = list(folds[data_fold_id][:12])
+            all_years = list(range(2012, 2024))
+            test_years = sorted(list(set(all_years) - set(train_years)))
             val_years   = []
-            test_years  = []
 
             # folds = [(2012, 2013, 2014, 2015, 2016, 2017, 2020, 2021, 2018, 2019, 2022, 2023),
             #      (2012, 2013, 2014, 2015, 2018, 2019, 2022, 2023, 2020, 2021, 2016, 2017),
