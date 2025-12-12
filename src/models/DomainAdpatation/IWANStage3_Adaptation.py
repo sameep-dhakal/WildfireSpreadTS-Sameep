@@ -94,19 +94,20 @@ class IWANStage3_Adaptation(BaseModel):
         for p in self.domain_head.parameters():
             p.requires_grad = False
 
-    # @torch.no_grad()
-    # def compute_importance(self, feat):
-    #     # feat: (B, C, H, W)
-    #     logits = self.domain_head(feat)       # (B,)
-    #     p_source = torch.sigmoid(logits)      # (B,)
-    #     p_target = 1.0 - p_source  
-    #     # Normalize first (IWAN rule)
+    @torch.no_grad()
+    def compute_importance(self, feat):
+        # feat: (B, C, H, W)
+        logits = self.domain_head(feat)       # (B,)
+        p_source = torch.sigmoid(logits)      # (B,)
+        p_target = 1.0 - p_source  
+        # Normalize first (IWAN rule)
 
-    #     #softening the weights 
-    #     w = torch.sqrt(p_target)    
-    #     w = w / (w.mean() + 1e-8)
+        #softening the weights 
+        # w = torch.sqrt(p_target)    
+        w = p_target / (p_target.mean() + 1e-8)
+        # w = w / (w.mean() + 1e-8)
 
-    #     return w 
+        return w 
 
     # @torch.no_grad()
     # def compute_importance(self, feat):
@@ -157,37 +158,37 @@ class IWANStage3_Adaptation(BaseModel):
     #     return w
 
 
-    @torch.no_grad()
-    def compute_importance(self, feat):
-        """
-        Compute IWAN-style importance weights in a stable, SGD-friendly way.
+    # @torch.no_grad()
+    # def compute_importance(self, feat):
+    #     """
+    #     Compute IWAN-style importance weights in a stable, SGD-friendly way.
 
-        Steps:
-        1) p_target = 1 - D(x)
-        2) Normalize by batch mean (IWAN rule)
-        3) Mild concave softening (sqrt)
-        4) Renormalize
-        5) Clamp to avoid extreme weights
-        """
-        logits = self.domain_head(feat)          # (B,)
-        p_source = torch.sigmoid(logits)
-        p_target = 1.0 - p_source                # (B,)
+    #     Steps:
+    #     1) p_target = 1 - D(x)
+    #     2) Normalize by batch mean (IWAN rule)
+    #     3) Mild concave softening (sqrt)
+    #     4) Renormalize
+    #     5) Clamp to avoid extreme weights
+    #     """
+    #     logits = self.domain_head(feat)          # (B,)
+    #     p_source = torch.sigmoid(logits)
+    #     p_target = 1.0 - p_source                # (B,)
 
-        eps = 1e-8
+    #     eps = 1e-8
 
-        # 1. IWAN normalization
-        w = p_target / (p_target.mean() + eps)
+    #     # 1. IWAN normalization
+    #     w = p_target / (p_target.mean() + eps)
 
-        # 2. Mild concave softening
-        w = torch.sqrt(w)
+    #     # 2. Mild concave softening
+    #     w = torch.sqrt(w)
 
-        # 3. Renormalize so mean(weight) = 1
-        w = w / (w.mean() + eps)
+    #     # 3. Renormalize so mean(weight) = 1
+    #     w = w / (w.mean() + eps)
 
-        # 4. Clamp (critical for stability)
-        w = torch.clamp(w, min=0.7, max=1.3)
+    #     # 4. Clamp (critical for stability)
+    #     w = torch.clamp(w, min=0.7, max=1.3)
 
-        return w
+    #     return w
 
 
 
@@ -283,14 +284,44 @@ class IWANStage3_Adaptation(BaseModel):
     # ============================================================
     # Helpers
     # ============================================================
+    # def _weighted_loss(self, logits, y, deep_feat):
+    #     """
+    #     Compute per-sample loss using the same per-pixel loss as BaseModel,
+    #     then weight by IWAN p_target.
+    #     """
+    #     y = y.float()
+    #     per_pixel: torch.Tensor
+
+    #     if self.hparams.loss_function == "Focal":
+    #         per_pixel = sigmoid_focal_loss(
+    #             logits,
+    #             y.unsqueeze(1),
+    #             alpha=1 - self.hparams.pos_class_weight,
+    #             gamma=self.gamma_focal,
+    #             reduction="none",
+    #         )
+    #     else:
+    #         pos_w = torch.tensor([self.hparams.pos_class_weight], device=logits.device)
+    #         bce = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction="none")
+    #         per_pixel = bce(logits, y.unsqueeze(1))
+
+    #     per_sample = per_pixel.mean(dim=(1, 2, 3))
+    #     w = self.compute_importance(deep_feat)
+    #     loss = (w * per_sample).mean()
+    #     return loss, w
+
+
     def _weighted_loss(self, logits, y, deep_feat):
         """
-        Compute per-sample loss using the same per-pixel loss as BaseModel,
-        then weight by IWAN p_target.
+        Blended segmentation loss:
+        - (1 - λ) * standard segmentation loss
+        - λ * importance-weighted loss (IWAN)
         """
         y = y.float()
-        per_pixel: torch.Tensor
 
+        # ---------------------------------
+        # Per-pixel loss
+        # ---------------------------------
         if self.hparams.loss_function == "Focal":
             per_pixel = sigmoid_focal_loss(
                 logits,
@@ -304,7 +335,26 @@ class IWANStage3_Adaptation(BaseModel):
             bce = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction="none")
             per_pixel = bce(logits, y.unsqueeze(1))
 
-        per_sample = per_pixel.mean(dim=(1, 2, 3))
-        w = self.compute_importance(deep_feat)
-        loss = (w * per_sample).mean()
+        # ---------------------------------
+        # Per-sample loss
+        # ---------------------------------
+        per_sample = per_pixel.mean(dim=(1, 2, 3))  # (B,)
+
+        # ---------------------------------
+        # Importance weights (IWAN)
+        # ---------------------------------
+        w = self.compute_importance(deep_feat).detach()
+
+        # ---------------------------------
+        # Blend losses
+        # ---------------------------------
+        lambda_w = 0.2  # your factor
+
+        loss_unweighted = per_sample.mean()
+        loss_weighted = (w * per_sample).mean()
+
+        loss = (1.0 - lambda_w) * loss_unweighted + lambda_w * loss_weighted
+
         return loss, w
+    
+
