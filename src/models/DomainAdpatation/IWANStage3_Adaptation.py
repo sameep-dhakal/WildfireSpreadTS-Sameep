@@ -99,8 +99,13 @@ class IWANStage3_Adaptation(BaseModel):
         # feat: (B, C, H, W)
         logits = self.domain_head(feat)       # (B,)
         p_source = torch.sigmoid(logits)      # (B,)
-        p_target = 1.0 - p_source             # (B,)
-        return p_target / (p_target.mean() + 1e-8)
+        p_target = 1.0 - p_source  
+            # Normalize first (IWAN rule)
+        w = p_target / (p_target.mean() + 1e-8)
+
+        # ⭐ SOFTEN WEIGHTS HERE (recommended: sqrt)
+        w = torch.sqrt(w)
+        return w 
 
     def forward(self, x, doys=None):
         if x.ndim == 5:
