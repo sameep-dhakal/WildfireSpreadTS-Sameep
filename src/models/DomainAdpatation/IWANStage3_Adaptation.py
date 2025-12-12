@@ -22,12 +22,12 @@ class IWANStage3_Adaptation(BaseModel):
 
     def __init__(
         self,
-        stage1_ckpt: str,
-        stage2_ckpt: str,
         encoder_name: str,
         n_channels: int,
         pos_class_weight: float,
         loss_function: str = "Focal",
+        stage1_ckpt: str = None,
+        stage2_ckpt: str = None,
         use_doy: bool = False,
         crop_before_eval: bool = False,
         required_img_size=None,
@@ -53,6 +53,11 @@ class IWANStage3_Adaptation(BaseModel):
         self.lr = lr
         self.alpha_focal = alpha_focal
         self.gamma_focal = gamma_focal
+
+        if stage1_ckpt is None:
+            raise ValueError("stage1_ckpt must be provided for IWANStage3_Adaptation.")
+        if stage2_ckpt is None:
+            raise ValueError("stage2_ckpt must be provided for IWANStage3_Adaptation.")
 
         # ---------------------------------------------------------
         # Load Stage-1 segmentation model (encoder+decoder+head)
