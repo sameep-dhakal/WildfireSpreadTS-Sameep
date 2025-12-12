@@ -21,7 +21,7 @@ parameters:
     value: "/develop/results/"
 
   data.data_fold_id:
-    values: 6  # e.g., 5 if that fold omits 2019
+    values: 0  # e.g., 5 if that fold omits 2019
   data.additional_data:
     value: true
   # keep other data params as needed…
