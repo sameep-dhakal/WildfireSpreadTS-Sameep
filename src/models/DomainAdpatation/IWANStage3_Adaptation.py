@@ -105,6 +105,14 @@ class IWANStage3_Adaptation(BaseModel):
         target_batch = next(self.target_iter)
         x_t, _ = self._split_batch(target_batch)
 
+        # Move to device
+        if x_s is not None:
+            x_s = x_s.to(self.device)
+        if y_s is not None:
+            y_s = y_s.to(self.device)
+        if x_t is not None:
+            x_t = x_t.to(self.device)
+
         if x_s.ndim == 5: x_s = x_s.flatten(1, 2)
         if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
 
