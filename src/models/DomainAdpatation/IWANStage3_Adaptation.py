@@ -121,6 +121,7 @@ class IWANStage3_Adaptation(BaseModel):
 
         # Loss 1: Weighted Source (Focus on target-like samples)
         w = self.compute_importance(feat_s)
+        y_s = y_s.float()
         per_pixel_s = sigmoid_focal_loss(logits_s, y_s.unsqueeze(1), reduction="none")
         loss_s = (w * per_pixel_s.mean(dim=(1, 2, 3))).mean()
 
