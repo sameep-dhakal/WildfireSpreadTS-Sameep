@@ -95,31 +95,77 @@ class IWANStage3_Adaptation(BaseModel):
         # Normalization as per Eq 8
         return w_tilde / (w_tilde.mean() + 1e-8)
 
+    # def training_step(self, batch, batch_idx):
+    #     x_s, _ = self._split_batch(batch)
+    #     x_t, _ = self._split_batch(next(self.target_iter))
+    #     x_t = x_t.to(self.device)
+
+    #     if x_s.ndim == 5: x_s = x_s.flatten(1, 2)
+    #     if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
+
+    #     # Forward passes
+    #     feat_s = self.encoder_s(x_s)[-1] 
+    #     feat_t = self.encoder_t(x_t)[-1] 
+    #     logits_t = self.seg_head(self.decoder(*self.encoder_t(x_t)))
+
+    #     # Weighted Adversarial Loss (Eq 14 Part 2)
+    #     w = self.compute_importance(feat_s)
+    #     d0_s = torch.sigmoid(self.domain_adv(self.grl(feat_s)))
+    #     d0_t = torch.sigmoid(self.domain_adv(self.grl(feat_t)))
+    #     loss_adv = -(w * torch.log(d0_s + 1e-8) + torch.log(1.0 - d0_t + 1e-8)).mean()
+
+    #     # Target Entropy (Eq 13/14 Part 1)
+    #     p_t = torch.sigmoid(logits_t)
+    #     entropy = -p_t * torch.log(p_t + 1e-8) - (1 - p_t) * torch.log(1 - p_t + 1e-8)
+    #     loss_entropy = entropy.mean()
+
+    #     # Total Objective Function: Equation 14
+    #     total_loss = (self.hparams.gamma_entropy * loss_entropy) + (self.hparams.lambda_adv * loss_adv)
+
+    #     self.log("train_loss_adv", loss_adv, prog_bar=True, on_epoch=True)
+    #     self.log("train_loss_entropy", loss_entropy, prog_bar=True, on_epoch=True)
+    #     return total_loss
+
     def training_step(self, batch, batch_idx):
+        # A. Load Source & Target Streams
         x_s, _ = self._split_batch(batch)
-        x_t, _ = self._split_batch(next(self.target_iter))
+        target_batch = next(self.target_iter)
+        x_t, _ = self._split_batch(target_batch)
         x_t = x_t.to(self.device)
+
+        # --- FIX: ENSURE BATCH SIZES MATCH ---
+        # Find the smaller of the two batch sizes (e.g., 58 vs 64)
+        batch_size = min(x_s.size(0), x_t.size(0))
+        
+        # Truncate both to the same size so the math in Eq 14 works
+        x_s = x_s[:batch_size]
+        x_t = x_t[:batch_size]
+        # -------------------------------------
 
         if x_s.ndim == 5: x_s = x_s.flatten(1, 2)
         if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
 
-        # Forward passes
+        # B. Forward Passes [cite: 91, 140]
         feat_s = self.encoder_s(x_s)[-1] 
         feat_t = self.encoder_t(x_t)[-1] 
         logits_t = self.seg_head(self.decoder(*self.encoder_t(x_t)))
 
-        # Weighted Adversarial Loss (Eq 14 Part 2)
+        # C. Weighted Adversarial Loss (Eq 14 Part 2) [cite: 163]
         w = self.compute_importance(feat_s)
+        
+        # Now w (size 58), d0_s (size 58), and d0_t (size 58) will match perfectly!
         d0_s = torch.sigmoid(self.domain_adv(self.grl(feat_s)))
         d0_t = torch.sigmoid(self.domain_adv(self.grl(feat_t)))
+        
+        # This line will no longer throw an error
         loss_adv = -(w * torch.log(d0_s + 1e-8) + torch.log(1.0 - d0_t + 1e-8)).mean()
 
-        # Target Entropy (Eq 13/14 Part 1)
+        # D. Target Entropy (Eq 13/14 Part 1) [cite: 154, 163]
         p_t = torch.sigmoid(logits_t)
         entropy = -p_t * torch.log(p_t + 1e-8) - (1 - p_t) * torch.log(1 - p_t + 1e-8)
         loss_entropy = entropy.mean()
 
-        # Total Objective Function: Equation 14
+        # E. Total Objective Function: Equation 14 [cite: 164]
         total_loss = (self.hparams.gamma_entropy * loss_entropy) + (self.hparams.lambda_adv * loss_adv)
 
         self.log("train_loss_adv", loss_adv, prog_bar=True, on_epoch=True)
