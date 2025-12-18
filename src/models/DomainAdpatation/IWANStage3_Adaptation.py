@@ -17,6 +17,7 @@ class IWANStage3_Adaptation(BaseModel):
         encoder_name: str,
         n_channels: int,
         pos_class_weight: float,
+        save_dir: str = "/develop/results/", # Add this line back in
         stage1_ckpt: str = None,
         stage2_ckpt: str = None,
         gamma_entropy: float = 0.1,
@@ -32,6 +33,8 @@ class IWANStage3_Adaptation(BaseModel):
             **kwargs,
         )
         self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["stage1_ckpt", "stage2_ckpt"])
+        self.save_dir = save_dir # Now the CLI can "see" the destination
         
         # 1. Load Architecture & Weights
         base_seg = SMPModel.load_from_checkpoint(stage1_ckpt, encoder_name=encoder_name)
