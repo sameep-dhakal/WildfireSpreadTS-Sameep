@@ -68,6 +68,19 @@ class IWANStage3_Adaptation(BaseModel):
         target_loader = self.trainer.datamodule.target_dataloader()
         self.target_iter = iter(cycle(target_loader))
 
+    def _split_batch(self, batch):
+        """Handle tuple/list or dict batches."""
+        if isinstance(batch, dict):
+            x = batch.get("image", batch.get("x", None))
+            y = batch.get("mask", batch.get("y", None))
+            return x, y
+        if isinstance(batch, (list, tuple)):
+            if len(batch) >= 2:
+                return batch[0], batch[1]
+            if len(batch) == 1:
+                return batch[0], None
+        return batch, None
+
     @torch.no_grad()
     def compute_importance(self, feat):
         logits = self.domain_head(feat)
@@ -79,10 +92,10 @@ class IWANStage3_Adaptation(BaseModel):
 
     def training_step(self, batch, batch_idx):
         # A. Source
-        x_s, y_s = batch["image"], batch["mask"]
+        x_s, y_s = self._split_batch(batch)
         # B. Target
         target_batch = next(self.target_iter)
-        x_t = target_batch["image"]
+        x_t, _ = self._split_batch(target_batch)
 
         if x_s.ndim == 5: x_s = x_s.flatten(1, 2)
         if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
