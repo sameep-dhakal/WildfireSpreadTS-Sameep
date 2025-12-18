@@ -167,6 +167,32 @@ class IWANStage3_Adaptation(BaseModel):
         self.target_iou.reset()
         self.target_f1.reset()
 
+    def test_step(self, batch, batch_idx):
+        x, y = self._split_batch(batch)
+        logits, _ = self(x)
+        preds = torch.sigmoid(logits).squeeze(1)
+        y = y.float()
+        loss = self.compute_loss(preds, y)
+
+        # Reuse BaseModel metrics
+        self.test_f1(preds, y)
+        self.test_avg_precision(preds, y)
+        self.test_precision(preds, y)
+        self.test_recall(preds, y)
+        self.test_iou(preds, y)
+
+        self.log("test_loss", loss, prog_bar=True)
+        self.log_dict(
+            {
+                "test_f1": self.test_f1,
+                "test_AP": self.test_avg_precision,
+                "test_precision": self.test_precision,
+                "test_recall": self.test_recall,
+                "test_iou": self.test_iou,
+            }
+        )
+        return loss
+
     def configure_optimizers(self):
         lr = self.hparams.lr
         # Paper strategy: encoder moves slower than task-specific layers
