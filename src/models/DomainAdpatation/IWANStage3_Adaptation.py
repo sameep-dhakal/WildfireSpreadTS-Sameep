@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from torchvision.ops import sigmoid_focal_loss
+from itertools import cycle
+import torchmetrics
 
 from models.SMPModel import SMPModel
 from models.DomainAdpatation.IWANStage2_WeightEstimator import (
@@ -9,32 +11,15 @@ from models.DomainAdpatation.IWANStage2_WeightEstimator import (
 )
 from ..BaseModel import BaseModel
 
-
-
 class IWANStage3_Adaptation(BaseModel):
-    """
-    Stage 3: Importance-weighted segmentation training.
-    - Load Stage-1 SMP UNet (encoder+decoder+head)
-    - Load Stage-2 discriminator (frozen)
-    - Compute importance weights = p(target|x)/mean(p(target|x))
-    - Apply weighted segmentation loss in training_step
-    """
-
     def __init__(
         self,
         encoder_name: str,
         n_channels: int,
         pos_class_weight: float,
-        save_dir: str = None,
-        loss_function: str = "Focal",
         stage1_ckpt: str = None,
         stage2_ckpt: str = None,
-        use_doy: bool = False,
-        crop_before_eval: bool = False,
-        required_img_size=None,
-        alpha_focal: float = 0.25,
-        gamma_focal: float = 2.0,
-        encoder_weights=None,
+        gamma_entropy: float = 0.1,
         lr: float = 1e-4,
         *args,
         **kwargs,
@@ -43,318 +28,117 @@ class IWANStage3_Adaptation(BaseModel):
             n_channels=n_channels,
             flatten_temporal_dimension=True,
             pos_class_weight=pos_class_weight,
-            loss_function=loss_function,
-            use_doy=use_doy,
-            crop_before_eval=crop_before_eval,
-            required_img_size=required_img_size,
-            alpha_focal=alpha_focal,
             *args,
             **kwargs,
         )
-        self.lr = lr
-        self.alpha_focal = alpha_focal
-        self.gamma_focal = gamma_focal
-        self.save_dir = save_dir  # accepted for config compatibility
+        self.save_hyperparameters()
+        
+        # 1. Load Architecture & Weights
+        base_seg = SMPModel.load_from_checkpoint(stage1_ckpt, encoder_name=encoder_name)
+        self.encoder = base_seg.model.encoder
+        self.decoder = base_seg.model.decoder
+        self.seg_head = base_seg.model.segmentation_head
 
-        if stage1_ckpt is None:
-            raise ValueError("stage1_ckpt must be provided for IWANStage3_Adaptation.")
-        if stage2_ckpt is None:
-            raise ValueError("stage2_ckpt must be provided for IWANStage3_Adaptation.")
+        # Store initial encoder weights to see how much we "drift" away from Stage 1
+        self.register_buffer("initial_encoder_flat", 
+                             torch.cat([p.flatten() for p in self.encoder.parameters()]).detach())
 
-        # ---------------------------------------------------------
-        # Load Stage-1 segmentation model (encoder+decoder+head)
-        # ---------------------------------------------------------
-        base_seg: SMPModel = SMPModel.load_from_checkpoint(
-            stage1_ckpt,
-            encoder_name=encoder_name,
-            n_channels=n_channels,
-            flatten_temporal_dimension=True,
-            pos_class_weight=pos_class_weight,
-            encoder_weights=encoder_weights,
-        )
-        unet = base_seg.model
-        self.encoder = unet.encoder
-        self.decoder = unet.decoder
-        self.seg_head = unet.segmentation_head
-
-        # ---------------------------------------------------------
-        # Load Stage-2 discriminator (frozen)
-        # ---------------------------------------------------------
+        # 2. Load Importance Oracle (Stage 2)
         state2 = torch.load(stage2_ckpt, map_location="cpu")
         feat_dim = state2.get("feat_dim", self.encoder.out_channels[-1])
-
-        # Stage-2 exports used DomainHead3x1024; fall back to CNN if needed
         try:
             self.domain_head = DomainHead3x1024(feat_dim)
-            self.domain_head.load_state_dict(state2["discriminator"], strict=True)
-        except Exception:
+            self.domain_head.load_state_dict(state2["discriminator"])
+        except:
             self.domain_head = DomainheadCNN(in_channels=feat_dim)
-            self.domain_head.load_state_dict(state2["discriminator"], strict=False)
+            self.domain_head.load_state_dict(state2["discriminator"])
 
         for p in self.domain_head.parameters():
             p.requires_grad = False
 
+        # 3. Validation Metrics (Specifically for Target Domain performance)
+        self.target_iou = torchmetrics.classification.BinaryJaccardIndex()
+        self.target_f1 = torchmetrics.classification.BinaryF1Score()
+
+    def on_train_start(self):
+        # We cycle the target dataloader (held-out year)
+        target_loader = self.trainer.datamodule.target_dataloader()
+        self.target_iter = iter(cycle(target_loader))
+
     @torch.no_grad()
     def compute_importance(self, feat):
-        # feat: (B, C, H, W)
-        logits = self.domain_head(feat)       # (B,)
-        p_source = torch.sigmoid(logits)      # (B,)
-        p_target = 1.0 - p_source  
-        # Normalize first (IWAN rule)
-
-        #softening the weights 
-        # w = torch.sqrt(p_target)    
-        w = p_target / (p_target.mean() + 1e-8)
-        # w = w / (w.mean() + 1e-8)
-
-        return w 
-
-    # @torch.no_grad()
-    # def compute_importance(self, feat):
-    #     # feat: (B, C, H, W)
-    #     logits = self.domain_head(feat)       # (B,)
-    #     p_source = torch.sigmoid(logits)      # (B,)
-    #     p_target = 1.0 - p_source  
-    #     eps = 1e-8
-
-    #     # -----------------------------------------------
-    #     # ⭐ LOGARITHMIC SOFTENING
-    #     # w_raw = p_target / mean(p_target)
-    #     # softened using log(1 + x)
-    #     # -----------------------------------------------
-    #     w_raw = p_target / (p_target.mean() + eps)
-
-    #     # concave softening: log(1 + x)
-    #     w = torch.log1p(w_raw)    # log(1 + w_raw)
-
-    #     # normalize again to preserve scale
-    #     w = w / (w.mean() + eps)
-
-    #     return w
-
-    # @torch.no_grad()
-    # def compute_importance(self, feat):
-    #     # feat: (B, C, H, W)
-    #     logits = self.domain_head(feat)       # (B,)
-    #     p_source = torch.sigmoid(logits)      # (B,)
-    #     p_target = 1.0 - p_source             # (B,)
-
-    #     eps = 1e-8
-
-    #     # -----------------------------------------------
-    #     # IWAN normalization: importance = p_target / mean
-    #     # -----------------------------------------------
-    #     w_raw = p_target / (p_target.mean() + eps)
-
-    #     # -----------------------------------------------
-    #     # ⭐ Hyperbolic concave softening: softsign
-    #     # w = x / sqrt(1 + x^2)
-    #     # -----------------------------------------------
-    #     w = w_raw / torch.sqrt(1 + w_raw * w_raw)
-
-    #     # normalize again so average weight = 1
-    #     w = w / (w.mean() + eps)
-
-    #     return w
-
-
-    # @torch.no_grad()
-    # def compute_importance(self, feat):
-    #     """
-    #     Compute IWAN-style importance weights in a stable, SGD-friendly way.
-
-    #     Steps:
-    #     1) p_target = 1 - D(x)
-    #     2) Normalize by batch mean (IWAN rule)
-    #     3) Mild concave softening (sqrt)
-    #     4) Renormalize
-    #     5) Clamp to avoid extreme weights
-    #     """
-    #     logits = self.domain_head(feat)          # (B,)
-    #     p_source = torch.sigmoid(logits)
-    #     p_target = 1.0 - p_source                # (B,)
-
-    #     eps = 1e-8
-
-    #     # 1. IWAN normalization
-    #     w = p_target / (p_target.mean() + eps)
-
-    #     # 2. Mild concave softening
-    #     w = torch.sqrt(w)
-
-    #     # 3. Renormalize so mean(weight) = 1
-    #     w = w / (w.mean() + eps)
-
-    #     # 4. Clamp (critical for stability)
-    #     w = torch.clamp(w, min=0.7, max=1.3)
-
-    #     return w
-
-
-
-    def forward(self, x, doys=None):
-        if x.ndim == 5:
-            x = x.flatten(1, 2)
-        feats = self.encoder(x)
-        dec = self.decoder(*feats)
-        logits = self.seg_head(dec)
-        return logits, feats[-1]
+        logits = self.domain_head(feat)
+        p_source = torch.sigmoid(logits)
+        w = (1.0 - p_source) / (p_source + 1e-8)
+        w = torch.sqrt(w) # Smoothing
+        w = w / (w.mean() + 1e-8) # Normalize
+        return torch.clamp(w, min=0.1, max=3.0)
 
     def training_step(self, batch, batch_idx):
-        # dataset returns (x, y) or (x, y, doys) depending on config
-        if isinstance(batch, dict):
-            x, y = batch["image"], batch["mask"]
-        elif len(batch) == 3:
-            x, y, _ = batch
-        else:
-            x, y = batch
+        # A. Source
+        x_s, y_s = batch["image"], batch["mask"]
+        # B. Target
+        target_batch = next(self.target_iter)
+        x_t = target_batch["image"]
 
-        logits, deep_feat = self(x)
+        if x_s.ndim == 5: x_s = x_s.flatten(1, 2)
+        if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
 
-        loss, w = self._weighted_loss(logits, y, deep_feat)
+        logits_s, feat_s = self(x_s)
+        logits_t, _ = self(x_t)
 
-        # optional metrics (reuse BaseModel F1)
-        self.train_f1(torch.sigmoid(logits).squeeze(1), y)
-        self.log("train_f1", self.train_f1, prog_bar=True, on_epoch=True)
-        self.log("train_loss", loss, prog_bar=True, on_epoch=True)
-        self.log("train_weight_mean", w.mean(), prog_bar=False, on_epoch=True)
-        return loss
+        # Loss 1: Weighted Source (Focus on target-like samples)
+        w = self.compute_importance(feat_s)
+        per_pixel_s = sigmoid_focal_loss(logits_s, y_s.unsqueeze(1), reduction="none")
+        loss_s = (w * per_pixel_s.mean(dim=(1, 2, 3))).mean()
 
-    # def validation_step(self, batch, batch_idx):
-    #     # reuse BaseModel-style loss, no weighting
-    #     y_hat, y = self.get_pred_and_gt(batch)
-    #     loss = self.compute_loss(y_hat, y)
-    #     self.log("val_loss", loss, prog_bar=True, on_epoch=True)
-    #     return loss
+        # Loss 2: Target Entropy (Confuse the model on target data)
+        p_t = torch.sigmoid(logits_t)
+        entropy = -p_t * torch.log(p_t + 1e-8) - (1 - p_t) * torch.log(1 - p_t + 1e-8)
+        loss_entropy = entropy.mean()
 
-    # def test_step(self, batch, batch_idx):
-    #     # reuse BaseModel-style test metrics (AP/F1/etc.)
-    #     return super().test_step(batch, batch_idx)
+        total_loss = loss_s + (self.hparams.gamma_entropy * loss_entropy)
 
+        # --- Monitor Feature Drift ---
+        current_encoder_flat = torch.cat([p.flatten() for p in self.encoder.parameters()])
+        drift = torch.norm(current_encoder_flat - self.initial_encoder_flat)
+
+        self.log_dict({
+            "train/total_loss": total_loss,
+            "train/loss_entropy": loss_entropy,
+            "train/encoder_drift": drift,
+            "train/w_max": w.max()
+        }, prog_bar=True)
+
+        return total_loss
 
     def validation_step(self, batch, batch_idx):
-        if isinstance(batch, dict):
-            x, y = batch["image"], batch["mask"]
-        elif len(batch) == 3:
-            x, y, _ = batch
-        else:
-            x, y = batch
+        """
+        Validate on Target Data with Labels.
+        This gives us the truth: is adaptation helping?
+        """
+        x, y = batch["image"], batch["mask"]
         logits, _ = self(x)
-        y_hat = torch.sigmoid(logits).squeeze(1)
-        loss = self.compute_loss(y_hat, y)
-        self.val_avg_precision(y_hat, y)
-        self.val_f1(y_hat, y)
-        self.log("val_loss", loss, prog_bar=True, on_epoch=True)
-        self.log("val_avg_precision", self.val_avg_precision, prog_bar=True, on_epoch=True)
-        self.log("val_f1", self.val_f1, prog_bar=True, on_epoch=True)
-        return loss
-    
+        preds = torch.sigmoid(logits).squeeze(1)
+        
+        # Update metrics
+        self.target_iou.update(preds, y)
+        self.target_f1.update(preds, y)
+        
+        return {"val_loss": self.compute_loss(preds, y)}
 
-    def test_step(self, batch, batch_idx):
-        if isinstance(batch, dict):
-            x, y = batch["image"], batch["mask"]
-        elif len(batch) == 3:
-            x, y, _ = batch
-        else:
-            x, y = batch
-        logits, _ = self(x)
-        y_hat = torch.sigmoid(logits).squeeze(1)
-        loss = self.compute_loss(y_hat, y)
-        self.test_f1(y_hat, y)
-        self.test_avg_precision(y_hat, y)
-        self.test_precision(y_hat, y)
-        self.test_recall(y_hat, y)
-        self.test_iou(y_hat, y)
-        self.log("test_loss", loss, prog_bar=True)
-        self.log_dict(
-            {
-                "test_f1": self.test_f1,
-                "test_AP": self.test_avg_precision,
-                "test_precision": self.test_precision,
-                "test_recall": self.test_recall,
-                "test_iou": self.test_iou,
-            }
-        )
-        return loss
+    def on_validation_epoch_end(self):
+        # Log aggregated target metrics
+        self.log("val/target_iou", self.target_iou.compute(), prog_bar=True)
+        self.log("val/target_f1", self.target_f1.compute(), prog_bar=True)
+        self.target_iou.reset()
+        self.target_f1.reset()
 
     def configure_optimizers(self):
-        params = [p for p in self.parameters() if p.requires_grad]
-        return torch.optim.Adam(params, lr=self.lr)
-
-    # ============================================================
-    # Helpers
-    # ============================================================
-    # def _weighted_loss(self, logits, y, deep_feat):
-    #     """
-    #     Compute per-sample loss using the same per-pixel loss as BaseModel,
-    #     then weight by IWAN p_target.
-    #     """
-    #     y = y.float()
-    #     per_pixel: torch.Tensor
-
-    #     if self.hparams.loss_function == "Focal":
-    #         per_pixel = sigmoid_focal_loss(
-    #             logits,
-    #             y.unsqueeze(1),
-    #             alpha=1 - self.hparams.pos_class_weight,
-    #             gamma=self.gamma_focal,
-    #             reduction="none",
-    #         )
-    #     else:
-    #         pos_w = torch.tensor([self.hparams.pos_class_weight], device=logits.device)
-    #         bce = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction="none")
-    #         per_pixel = bce(logits, y.unsqueeze(1))
-
-    #     per_sample = per_pixel.mean(dim=(1, 2, 3))
-    #     w = self.compute_importance(deep_feat)
-    #     loss = (w * per_sample).mean()
-    #     return loss, w
-
-
-    def _weighted_loss(self, logits, y, deep_feat):
-        """
-        Blended segmentation loss:
-        - (1 - λ) * standard segmentation loss
-        - λ * importance-weighted loss (IWAN)
-        """
-        y = y.float()
-
-        # ---------------------------------
-        # Per-pixel loss
-        # ---------------------------------
-        if self.hparams.loss_function == "Focal":
-            per_pixel = sigmoid_focal_loss(
-                logits,
-                y.unsqueeze(1),
-                alpha=1 - self.hparams.pos_class_weight,
-                gamma=self.gamma_focal,
-                reduction="none",
-            )
-        else:
-            pos_w = torch.tensor([self.hparams.pos_class_weight], device=logits.device)
-            bce = nn.BCEWithLogitsLoss(pos_weight=pos_w, reduction="none")
-            per_pixel = bce(logits, y.unsqueeze(1))
-
-        # ---------------------------------
-        # Per-sample loss
-        # ---------------------------------
-        per_sample = per_pixel.mean(dim=(1, 2, 3))  # (B,)
-
-        # ---------------------------------
-        # Importance weights (IWAN)
-        # ---------------------------------
-        w = self.compute_importance(deep_feat).detach()
-
-        # ---------------------------------
-        # Blend losses
-        # ---------------------------------
-        lambda_w = 0.2  # your factor
-
-        loss_unweighted = per_sample.mean()
-        loss_weighted = (w * per_sample).mean()
-
-        loss = (1.0 - lambda_w) * loss_unweighted + lambda_w * loss_weighted
-
-        return loss, w
-    
-
+        lr = self.hparams.lr
+        # Paper strategy: encoder moves slower than task-specific layers
+        return torch.optim.Adam([
+            {'params': self.encoder.parameters(), 'lr': lr * 0.1},
+            {'params': self.decoder.parameters(), 'lr': lr},
+            {'params': self.seg_head.parameters(), 'lr': lr},
+        ])
