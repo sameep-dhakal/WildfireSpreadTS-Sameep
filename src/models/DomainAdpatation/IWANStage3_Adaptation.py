@@ -152,6 +152,7 @@ class IWANStage3_Adaptation(BaseModel):
         x, y = self._split_batch(batch)
         logits, _ = self(x)
         preds = torch.sigmoid(logits).squeeze(1)
+        y = y.long()
         
         # Update metrics
         self.target_iou.update(preds, y)
@@ -170,15 +171,16 @@ class IWANStage3_Adaptation(BaseModel):
         x, y = self._split_batch(batch)
         logits, _ = self(x)
         preds = torch.sigmoid(logits).squeeze(1)
-        y = y.float()
-        loss = self.compute_loss(preds, y)
+        y_float = y.float()
+        y_long = y.long()
+        loss = self.compute_loss(preds, y_float)
 
         # Reuse BaseModel metrics
-        self.test_f1(preds, y)
-        self.test_avg_precision(preds, y)
-        self.test_precision(preds, y)
-        self.test_recall(preds, y)
-        self.test_iou(preds, y)
+        self.test_f1(preds, y_long)
+        self.test_avg_precision(preds, y_long)
+        self.test_precision(preds, y_long)
+        self.test_recall(preds, y_long)
+        self.test_iou(preds, y_long)
 
         self.log("test_loss", loss, prog_bar=True)
         self.log_dict(
