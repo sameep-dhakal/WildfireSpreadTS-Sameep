@@ -179,11 +179,45 @@ class IWANStage3_Adaptation(BaseModel):
         self.target_iou.update(preds, y.long())
         self.log("val_target_iou", self.target_iou, on_epoch=True, prog_bar=True)
 
+    # def test_step(self, batch, batch_idx):
+    #     """ FULL LOGGING: Implementing all metrics from BaseModel """
+    #     x, y = self._split_batch(batch)
+    #     logits = self.seg_head(self.decoder(*self.encoder_t(x)))
+    #     preds = torch.sigmoid(logits).squeeze(1)
+    #     y_float = y.float()
+    #     y_long = y.long()
+        
+    #     loss = self.compute_loss(preds, y_float)
+
+    #     # Track every metric as before
+    #     self.test_f1(preds, y_long)
+    #     self.test_avg_precision(preds, y_long)
+    #     self.test_precision(preds, y_long)
+    #     self.test_recall(preds, y_long)
+    #     self.test_iou(preds, y_long)
+
+    #     self.log("test_loss", loss, prog_bar=True)
+    #     self.log_dict({
+    #         "test_f1": self.test_f1,
+    #         "test_AP": self.test_avg_precision,
+    #         "test_precision": self.test_precision,
+    #         "test_recall": self.test_recall,
+    #         "test_iou": self.test_iou,
+    #     })
+    #     return loss
+
     def test_step(self, batch, batch_idx):
         """ FULL LOGGING: Implementing all metrics from BaseModel """
         x, y = self._split_batch(batch)
+        
+        # FIX: Flatten 5D [B, T, C, H, W] to 4D [B, T*C, H, W] for the ResNet encoder
+        if x.ndim == 5: 
+            x = x.flatten(1, 2)
+            
+        # Use adapted Ft and frozen C for final predictions
         logits = self.seg_head(self.decoder(*self.encoder_t(x)))
         preds = torch.sigmoid(logits).squeeze(1)
+        
         y_float = y.float()
         y_long = y.long()
         
