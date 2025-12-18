@@ -541,10 +541,11 @@ def main():
         run=False,
     )
 
-    ckpt = cli.config.ckpt_path or "last"
+    ckpt = cli.config.ckpt_path or None
     if cli.config.do_train:
         cli.trainer.fit(cli.model, cli.datamodule, ckpt_path=cli.config.ckpt_path)
-        ckpt = "last"  # no val loop → use last checkpoint for testing
+        # Use in-memory model for subsequent eval unless a path was explicitly provided
+        ckpt = None
 
     if cli.config.do_validate:
         cli.trainer.validate(cli.model, cli.datamodule, ckpt_path=ckpt)
