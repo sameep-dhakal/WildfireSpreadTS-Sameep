@@ -136,12 +136,11 @@ class IWANStage3_Adaptation(BaseModel):
         current_encoder_flat = torch.cat([p.flatten() for p in self.encoder.parameters()])
         drift = torch.norm(current_encoder_flat - self.initial_encoder_flat)
 
-        self.log_dict({
-            "train/total_loss": total_loss,
-            "train/loss_entropy": loss_entropy,
-            "train/encoder_drift": drift,
-            "train/w_max": w.max()
-        }, prog_bar=True)
+        # Epoch-level logging for checkpoint/monitoring (avoid "/" in metric names)
+        self.log("train_total_loss", total_loss, prog_bar=True, on_step=False, on_epoch=True)
+        self.log("train_loss_entropy", loss_entropy, prog_bar=False, on_step=False, on_epoch=True)
+        self.log("train_encoder_drift", drift, prog_bar=False, on_step=False, on_epoch=True)
+        self.log("train_w_max", w.max(), prog_bar=False, on_step=False, on_epoch=True)
 
         return total_loss
 

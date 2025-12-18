@@ -31,12 +31,12 @@ enable_checkpointing: true
 callbacks: 
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
-      # CHANGE THIS: Monitor target confidence instead of source error
-      monitor: train/loss_entropy 
+      # Monitor entropy loss logged on_epoch by IWANStage3_Adaptation
+      monitor: train_loss_entropy 
       mode: min
       save_top_k: 1
       save_last: false
-      filename: "best-adapted-{epoch:02d}-{train/loss_entropy:.4f}"
+      filename: "best-adapted-{epoch:02d}-{train_loss_entropy:.4f}"
   
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
