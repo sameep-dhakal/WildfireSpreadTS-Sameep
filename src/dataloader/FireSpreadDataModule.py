@@ -272,9 +272,14 @@ class FireSpreadDataModule(LightningDataModule):
             ]
 
             # Use fold years as train; hold out the remaining year(s) as test (target)
-            train_years = list(folds[data_fold_id][:12])
-            all_years = list(range(2012, 2024))
-            test_years = sorted(list(set(all_years) - set(train_years)))
+            # train_years = list(folds[data_fold_id][:12])
+            # all_years = list(range(2012, 2024))
+            # test_years = sorted(list(set(all_years) - set(train_years)))
+            # val_years   = []
+
+
+            train_years = [2012]
+            test_years = [2023]
             val_years   = []
 
 
