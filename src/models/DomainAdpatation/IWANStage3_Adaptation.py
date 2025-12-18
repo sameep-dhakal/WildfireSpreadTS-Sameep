@@ -87,13 +87,37 @@ class IWANStage3_Adaptation(BaseModel):
             return batch.get("image"), batch.get("mask")
         return batch[0], batch[1]
 
+    # @torch.no_grad()
+    # def compute_importance(self, feat):
+    #     """ Eq 7 & 8: Importance weights w(z) """
+    #     d_out = torch.sigmoid(self.domain_oracle(feat))
+    #     w_tilde = (1.0 - d_out) / (d_out + 1e-8)
+    #     # Normalization as per Eq 8
+    #     return w_tilde / (w_tilde.mean() + 1e-8)
+
+
     @torch.no_grad()
     def compute_importance(self, feat):
-        """ Eq 7 & 8: Importance weights w(z) """
-        d_out = torch.sigmoid(self.domain_oracle(feat))
+        """ 
+        Enhanced Eq 7 & 8: Importance weights with smoothing and clamping.
+        """
+        # 1. Get raw probability from first discriminator D [cite: 117]
+        d_out = torch.sigmoid(self.domain_oracle(feat)) 
+        
+        # 2. Compute raw weight ratio (Eq 7) [cite: 125]
         w_tilde = (1.0 - d_out) / (d_out + 1e-8)
-        # Normalization as per Eq 8
-        return w_tilde / (w_tilde.mean() + 1e-8)
+        
+        # 3. Apply Square Root Smoothing
+        # This reduces the variance of the weights, making training more stable 
+        w_tilde = torch.sqrt(w_tilde)
+        
+        # 4. Normalize weights so the expected value is 1 (Eq 8) [cite: 132, 147]
+        w = w_tilde / (w_tilde.mean() + 1e-8)
+        
+        # 5. Clamp weights
+        # Prevents any single sample from having too much or too little influence.
+        # min=0.1 ensures no sample is completely ignored; max=3.0 prevents gradient explosion.
+        return torch.clamp(w, min=0.1, max=3.0)
 
     # def training_step(self, batch, batch_idx):
     #     x_s, _ = self._split_batch(batch)
