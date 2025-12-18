@@ -63,6 +63,14 @@ class IWANStage3_Adaptation(BaseModel):
         self.target_iou = torchmetrics.classification.BinaryJaccardIndex()
         self.target_f1 = torchmetrics.classification.BinaryF1Score()
 
+    def forward(self, x, doys=None):
+        if x.ndim == 5:
+            x = x.flatten(1, 2)
+        feats = self.encoder(x)
+        dec = self.decoder(*feats)
+        logits = self.seg_head(dec)
+        return logits, feats[-1]
+
     def on_train_start(self):
         # We cycle the target dataloader (held-out year)
         target_loader = self.trainer.datamodule.target_dataloader()
@@ -133,7 +141,7 @@ class IWANStage3_Adaptation(BaseModel):
         Validate on Target Data with Labels.
         This gives us the truth: is adaptation helping?
         """
-        x, y = batch["image"], batch["mask"]
+        x, y = self._split_batch(batch)
         logits, _ = self(x)
         preds = torch.sigmoid(logits).squeeze(1)
         
