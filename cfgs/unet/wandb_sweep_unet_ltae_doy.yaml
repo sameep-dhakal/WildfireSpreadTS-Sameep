@@ -61,8 +61,8 @@ parameters:
     values:
       - 2012  
 
-  trainer.max_steps: 
-    value: 40000
+  # trainer.max_steps: 
+  #   value: 40000
   #     # - 20000
   #     # - 30000
   do_validate:
