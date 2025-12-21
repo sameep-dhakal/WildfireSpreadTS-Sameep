@@ -80,15 +80,16 @@ callbacks:
     init_args:
       monitor: train_loss_epoch     # or train_f1 if you prefer
       mode: min               # use max for train_f1
+      save_on_train_epoch_end: true  # needed when monitoring a train metric (no val loop)
       save_top_k: 1
-      filename: "best-{epoch}-{train_loss:.4f}"
+      filename: "best-{epoch}-{train_loss_epoch:.4f}"
   - class_path: pytorch_lightning.callbacks.model_checkpoint.ModelCheckpoint
     init_args:
       save_last: true
       filename: "last"
 
 fast_dev_run: false
-max_epochs: 50
+max_epochs: 3
 min_epochs: -1
 max_steps: -1
 min_steps: -1
