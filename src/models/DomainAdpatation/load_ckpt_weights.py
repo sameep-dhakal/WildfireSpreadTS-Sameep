@@ -299,47 +299,60 @@
 
 
 
+
 import os
+import glob
 import torch
 from pytorch_lightning import Trainer
 from models.SMPModel import SMPModel
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
 
-def diagnostic_test_stage1(stage1_ckpt_path, target_year, data_dir):
-    """
-    Diagnose Stage 1 Expert performance on the Target Year only.
-    This helps determine if the data for that year is fundamentally difficult.
-    """
-    print(f"\n🚀 Starting Diagnostic Test for Stage 1 Expert...")
-    print(f"📍 Checkpoint: {stage1_ckpt_path}")
+def get_latest_checkpoint(checkpoint_dir):
+    """Finds the most recently created .ckpt file in a directory."""
+    # Pattern to match all .ckpt files in the folder
+    pattern = os.path.join(checkpoint_dir, "*.ckpt")
+    list_of_files = glob.glob(pattern)
+    
+    if not list_of_files:
+        raise FileNotFoundError(f"No .ckpt files found in {checkpoint_dir}")
+    
+    # Return the file with the maximum (latest) creation time
+    return max(list_of_files, key=os.path.getctime)
+
+def diagnostic_test_stage1(stage1_dir, target_year, data_dir):
+    """Diagnose Stage 1 Expert performance using the latest checkpoint in a folder."""
+    
+    # Automatically find the latest checkpoint file
+    try:
+        stage1_ckpt_path = get_latest_checkpoint(stage1_dir)
+        print(f"\n🔍 Found latest checkpoint: {stage1_ckpt_path}")
+    except FileNotFoundError as e:
+        print(f"❌ Error: {e}")
+        return
+
     print(f"📅 Target Year: {target_year}")
 
-    # 1. Load the Stage 1 Expert strictly as-is
-    # This uses the weights that achieved the high AP on the source year.
+    # Load the model using Lightning's built-in method
     model = SMPModel.load_from_checkpoint(stage1_ckpt_path)
     model.eval()
 
-    # 2. Setup DataModule for the Target Year only
-    # We set test_years to the target_year (e.g., 2023) to isolate performance.
+    # DataModule setup for the target test year
     datamodule = FireSpreadDataModule(
         data_dir=data_dir,
-        train_years=[], # Not training
-        val_years=[],   # Not validating
+        train_years=[], 
+        val_years=[],   
         test_years=[target_year], 
         batch_size=64,
         num_workers=8
     )
 
-    # 3. Initialize Trainer for Inference
-    # We use Trainer.test() to ensure metrics like AP and F1 are logged properly.
     trainer = Trainer(
         accelerator="auto",
         devices=1,
-        precision=16, # Match your training precision
-        logger=False  # Keep console output clean for diagnostic
+        precision=16,
+        logger=False 
     )
 
-    # 4. Execute Test
     print(f"📊 Running evaluation on year {target_year}...")
     results = trainer.test(model, datamodule=datamodule)
     
@@ -351,10 +364,9 @@ def diagnostic_test_stage1(stage1_ckpt_path, target_year, data_dir):
     print("==========================================\n")
 
 if __name__ == "__main__":
-    # Example for Fold 11 (Target 2023)
-    # Replace with your actual paths
-    STAGE1_PATH = "/develop/results/wildfire-progression/6l528lvo/checkpoints",
+    # Point this to the folder containing the checkpoints
+    STAGE1_DIR = "/develop/results/wildfire-progression/6l528lvo/checkpoints"
     DATA_DIR = "/develop/data/WildfireSpreadTS_2012_2015_hdf5/"
     TARGET_YEAR = 2023
 
-    diagnostic_test_stage1(STAGE1_PATH, TARGET_YEAR, DATA_DIR)
+    diagnostic_test_stage1(STAGE1_DIR, TARGET_YEAR, DATA_DIR)
