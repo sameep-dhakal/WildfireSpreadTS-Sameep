@@ -1,4 +1,4 @@
-project: wildfire-resnet18-wsts++_train_test_only
+project: wildfire-resnet18-train_test_only
 command:
   - ${env}
   - python
@@ -66,9 +66,9 @@ parameters:
   #     # - 20000
   #     # - 30000
   do_validate:
-    value: true    
+    value: false    
   do_test:
-    value: false
+    value: true
 
   do_train:
     value: true
