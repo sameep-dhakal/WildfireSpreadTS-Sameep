@@ -307,6 +307,22 @@ from pytorch_lightning import Trainer
 from models.SMPModel import SMPModel
 from dataloader.FireSpreadDataModule import FireSpreadDataModule
 
+# Match the Stage-1/Stage-2 data pipeline (see cfgs/data_monotemporal_veg_features.yaml)
+DATAMODULE_DEFAULTS = {
+    "batch_size": 64,
+    "n_leading_observations": 1,
+    "n_leading_observations_test_adjustment": 5,
+    "crop_side_length": 128,
+    "load_from_hdf5": True,
+    "num_workers": 8,
+    "remove_duplicate_features": True,
+    "is_pad": False,
+    "features_to_keep": [0, 1, 2, 3, 4, 38, 39],
+    "return_doy": False,
+    "additional_data": True,  # use the 2012–2023 folds
+}
+
+
 def get_latest_checkpoint(checkpoint_dir):
     """Finds the most recently created .ckpt file in a directory."""
     # Pattern to match all .ckpt files in the folder
@@ -318,6 +334,14 @@ def get_latest_checkpoint(checkpoint_dir):
     
     # Return the file with the maximum (latest) creation time
     return max(list_of_files, key=os.path.getctime)
+
+
+def resolve_data_fold_id(target_year: int) -> int:
+    """Map a held-out target year to the fold id used by FireSpreadDataModule."""
+    if target_year < 2012 or target_year > 2023:
+        raise ValueError(f"Target year must be between 2012 and 2023, got {target_year}")
+    return target_year - 2012
+
 
 def diagnostic_test_stage1(stage1_dir, target_year, data_dir):
     """Diagnose Stage 1 Expert performance using the latest checkpoint in a folder."""
@@ -337,13 +361,11 @@ def diagnostic_test_stage1(stage1_dir, target_year, data_dir):
     model.eval()
 
     # DataModule setup for the target test year
+    data_fold_id = resolve_data_fold_id(target_year)
     datamodule = FireSpreadDataModule(
         data_dir=data_dir,
-        train_years=[], 
-        val_years=[],   
-        test_years=[target_year], 
-        batch_size=64,
-        num_workers=8
+        data_fold_id=data_fold_id,
+        **DATAMODULE_DEFAULTS,
     )
 
     trainer = Trainer(
