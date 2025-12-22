@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-stage3-sqrtweightsclampnew
+project: wildfire-domainadaptation-stage3-sqrtweightsclampiwan
 command:
   - ${env}
   - python
