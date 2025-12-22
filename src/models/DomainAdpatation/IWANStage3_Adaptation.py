@@ -4,7 +4,6 @@ from torch.autograd import Function
 from itertools import cycle
 import torchmetrics
 import copy
-from torchvision.ops import sigmoid_focal_loss
 
 from models.SMPModel import SMPModel
 from models.DomainAdpatation.IWANStage2_WeightEstimator import DomainHead3x1024
@@ -120,7 +119,10 @@ class IWANStage3_Adaptation(BaseModel):
         # 5. Clamp weights
         # Prevents any single sample from having too much or too little influence.
         # min=0.1 ensures no sample is completely ignored; max=3.0 prevents gradient explosion.
-        return torch.clamp(w, min=0.1, max=3.0)
+        # return torch.clamp(w, min=0.1, max=3.0)
+
+        # 5. return weights as it is without clamping
+        return w
 
     # def training_step(self, batch, batch_idx):
     #     x_s, _ = self._split_batch(batch)
@@ -236,16 +238,20 @@ class IWANStage3_Adaptation(BaseModel):
 
         # 5) Weighted source segmentation loss (anchors task; head remains trainable).
         pos_w = torch.as_tensor(self.hparams.pos_class_weight, device=self.device)
-        # Map pos_weight -> alpha in [0,1] for focal; keeps class bias but stable.
-        alpha = float((pos_w / (1.0 + pos_w)).clamp(0.0, 1.0))
-        seg_loss_pix = sigmoid_focal_loss(
-            logits_s.squeeze(1),
-            y_s.float(),
-            alpha=alpha,
-            gamma=2.0,
-            reduction="none",
-        )
-        seg_loss = (w.view(-1, *([1] * (seg_loss_pix.ndim - 1))) * seg_loss_pix).mean()
+        bce = nn.BCEWithLogitsLoss(reduction="none", pos_weight=pos_w)
+        seg_loss = bce(logits_s.squeeze(1), y_s.float())
+        seg_loss = (w.view(-1, *([1] * (seg_loss.ndim - 1))) * seg_loss).mean()
+
+        # # Map pos_weight -> alpha in [0,1] for focal; keeps class bias but stable.
+        # alpha = float((pos_w / (1.0 + pos_w)).clamp(0.0, 1.0))
+        # seg_loss_pix = sigmoid_focal_loss(
+        #     logits_s.squeeze(1),
+        #     y_s.float(),
+        #     alpha=alpha,
+        #     gamma=2.0,
+        #     reduction="none",
+        # )
+        # seg_loss = (w.view(-1, *([1] * (seg_loss_pix.ndim - 1))) * seg_loss_pix).mean()
 
         # 6) Adversarial alignment, weighted on the source side.
         d0_s = torch.sigmoid(self.domain_adv(self.grl(feat_s)))
