@@ -61,8 +61,8 @@ class IWANStage3_Adaptation(BaseModel):
         # C: Classifier/Decoder (FROZEN to preserve task expertise)
         self.decoder = base_seg.model.decoder
         self.seg_head = base_seg.model.segmentation_head
-        for p in self.decoder.parameters(): p.requires_grad = True
-        for p in self.seg_head.parameters(): p.requires_grad = True
+        for p in self.decoder.parameters(): p.requires_grad = False
+        for p in self.seg_head.parameters(): p.requires_grad = False
 
         # 2. DOMAIN DISCRIMINATORS
         feat_dim = self.encoder_s.out_channels[-1]
@@ -100,29 +100,10 @@ class IWANStage3_Adaptation(BaseModel):
 
     @torch.no_grad()
     def compute_importance(self, feat):
-        """ 
-        Enhanced Eq 7 & 8: Importance weights with smoothing and clamping.
-        """
-        # 1. Get raw probability from first discriminator D [cite: 117]
-        d_out = torch.sigmoid(self.domain_oracle(feat)) 
-        
-        # 2. Compute raw weight ratio (Eq 7) [cite: 125]
-        w_tilde = (1.0 - d_out) / (d_out + 1e-8)
-        
-        # 3. Apply Square Root Smoothing
-        # This reduces the variance of the weights, making training more stable 
-        w_tilde = torch.sqrt(w_tilde)
-        
-        # 4. Normalize weights so the expected value is 1 (Eq 8) [cite: 132, 147]
-        w = w_tilde / (w_tilde.mean() + 1e-8)
-        
-        # 5. Clamp weights
-        # Prevents any single sample from having too much or too little influence.
-        # min=0.1 ensures no sample is completely ignored; max=3.0 prevents gradient explosion.
-        # return torch.clamp(w, min=0.1, max=3.0)
-
-        # 5. return weights as it is without clamping
-        return w
+        """ Eq 7/8: w(z) = 1 - D*(z), normalized to mean 1."""
+        d_out = torch.sigmoid(self.domain_oracle(feat))
+        w_tilde = 1.0 - d_out
+        return w_tilde / (w_tilde.mean() + 1e-8)
 
     # def training_step(self, batch, batch_idx):
     #     x_s, _ = self._split_batch(batch)
@@ -227,48 +208,61 @@ class IWANStage3_Adaptation(BaseModel):
         if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
 
         # 3) Forward through the target feature extractor + task head for both domains.
-        enc_s = self.encoder_t(x_s)
+        enc_s_t = self.encoder_t(x_s)
         enc_t = self.encoder_t(x_t)
-        feat_s, feat_t = enc_s[-1], enc_t[-1]
-        logits_s = self.seg_head(self.decoder(*enc_s))
+        feat_s_t, feat_t = enc_s_t[-1], enc_t[-1]
+        logits_s = self.seg_head(self.decoder(*enc_s_t))
         logits_t = self.seg_head(self.decoder(*enc_t))
 
-        # 4) Importance weights (IWAN) on source features to suppress outliers.
-        w = self.compute_importance(feat_s).detach()
+        # 4) Importance weights (IWAN) computed from frozen Fs features to suppress outliers.
+        with torch.no_grad():
+            feat_s_fs = self.encoder_s(x_s)[-1]
+        w = self.compute_importance(feat_s_fs).detach()
 
-        # 5) Weighted source segmentation loss (anchors task; head remains trainable).
-        pos_w = torch.as_tensor(self.hparams.pos_class_weight, device=self.device)
-        bce = nn.BCEWithLogitsLoss(reduction="none", pos_weight=pos_w)
-        seg_loss = bce(logits_s.squeeze(1), y_s.float())
-        seg_loss = (w.view(-1, *([1] * (seg_loss.ndim - 1))) * seg_loss).mean()
+        # 5) Adversarial alignment, weighted on the source side (source=1, target=0).
+        d0_s_log = self.domain_adv(self.grl(feat_s_t))
+        d0_t_log = self.domain_adv(self.grl(feat_t))
+        bce_dom = nn.functional.binary_cross_entropy_with_logits
+        loss_adv = 0.5 * (w * bce_dom(d0_s_log, torch.ones_like(d0_s_log), reduction="none")).mean() + \
+                   0.5 * bce_dom(d0_t_log, torch.zeros_like(d0_t_log), reduction="mean")
+        d0_s = torch.sigmoid(d0_s_log)
+        d0_t = torch.sigmoid(d0_t_log)
 
-        # # Map pos_weight -> alpha in [0,1] for focal; keeps class bias but stable.
-        # alpha = float((pos_w / (1.0 + pos_w)).clamp(0.0, 1.0))
-        # seg_loss_pix = sigmoid_focal_loss(
-        #     logits_s.squeeze(1),
-        #     y_s.float(),
-        #     alpha=alpha,
-        #     gamma=2.0,
-        #     reduction="none",
-        # )
-        # seg_loss = (w.view(-1, *([1] * (seg_loss_pix.ndim - 1))) * seg_loss_pix).mean()
-
-        # 6) Adversarial alignment, weighted on the source side.
-        d0_s = torch.sigmoid(self.domain_adv(self.grl(feat_s)))
-        d0_t = torch.sigmoid(self.domain_adv(self.grl(feat_t)))
-        loss_adv = -(w * torch.log(d0_s + 1e-8) + torch.log(1.0 - d0_t + 1e-8)).mean()
-
-        # 7) Target entropy minimization for confident target predictions.
+        # 6) Target entropy minimization for confident target predictions.
         p_t = torch.sigmoid(logits_t)
         entropy = -p_t * torch.log(p_t + 1e-8) - (1 - p_t) * torch.log(1 - p_t + 1e-8)
         loss_entropy = entropy.mean()
 
         lam_adv = self._lambda_adv_factor()
-        total_loss = seg_loss + lam_adv * loss_adv + self.hparams.gamma_entropy * loss_entropy
+        total_loss = lam_adv * loss_adv + self.hparams.gamma_entropy * loss_entropy
 
-        self.log("train_loss_seg", seg_loss, prog_bar=True, on_epoch=True)
         self.log("train_loss_adv", loss_adv, prog_bar=True, on_epoch=True)
         self.log("train_loss_entropy", loss_entropy, prog_bar=True, on_epoch=True)
+        # Lightweight diagnostics to track IWAN weights and batch makeup
+        self.log_dict(
+            {
+                "w_mean": w.mean(),
+                "w_std": w.std(),
+                "w_min": w.min(),
+                "w_max": w.max(),
+                "batch_pos_frac": y_s.float().mean(),
+                "lambda_adv_eff": lam_adv,
+                "d0_s_mean": d0_s.mean(),
+                "d0_t_mean": d0_t.mean(),
+                "d0_s_std": d0_s.std(),
+                "d0_t_std": d0_t.std(),
+            },
+            on_step=False,
+            on_epoch=True,
+            prog_bar=False,
+            logger=True,
+        )
+        if batch_idx % 5 == 0 and hasattr(self.logger, "experiment"):
+            try:
+                import wandb
+                self.logger.experiment.log({"w_hist": wandb.Histogram(w.detach().cpu())})
+            except Exception:
+                pass
         return total_loss
 
     def validation_step(self, batch, batch_idx):
@@ -340,12 +334,10 @@ class IWANStage3_Adaptation(BaseModel):
         return loss
 
     def configure_optimizers(self):
-        # Ft and domain_adv share base LR; decoder/seg_head get a smaller LR for stability.
-        head_lr = self.hparams.lr * self.hparams.lr_head_scale
+        # Only Ft and D0 are trainable in Stage-3 (Fs/C are fixed).
         return torch.optim.Adam([
             {"params": self.encoder_t.parameters(), "lr": self.hparams.lr},
             {"params": self.domain_adv.parameters(), "lr": self.hparams.lr},
-            {"params": list(self.decoder.parameters()) + list(self.seg_head.parameters()), "lr": head_lr},
         ])
 
     def _lambda_adv_factor(self):
