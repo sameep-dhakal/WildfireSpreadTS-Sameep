@@ -37,9 +37,11 @@ class IWANStage3_Adaptation(BaseModel):
         save_dir: str = "/develop/results/",
         stage1_ckpt: str = None,
         stage2_ckpt: str = None,
-        gamma_entropy: float = 0.1,  # γ in Eq 14
-        lambda_adv: float = 1.0,     # λ in Eq 14
+        gamma_entropy: float = 0.1,        # γ in Eq 14 (entropy on target)
+        lambda_adv: float = 0.5,           # final λ in Eq 14 (adversarial weight)
+        lambda_adv_warmup_epochs: int = 3, # linearly ramp λ over these epochs
         lr: float = 1e-4,
+        lr_head_scale: float = 0.5,        # smaller LR for decoder/seg head to keep them stable
         **kwargs,
     ):
         super().__init__(n_channels=n_channels, pos_class_weight=pos_class_weight, **kwargs)
@@ -59,8 +61,8 @@ class IWANStage3_Adaptation(BaseModel):
         # C: Classifier/Decoder (FROZEN to preserve task expertise)
         self.decoder = base_seg.model.decoder
         self.seg_head = base_seg.model.segmentation_head
-        for p in self.decoder.parameters(): p.requires_grad = False
-        for p in self.seg_head.parameters(): p.requires_grad = False
+        for p in self.decoder.parameters(): p.requires_grad = True
+        for p in self.seg_head.parameters(): p.requires_grad = True
 
         # 2. DOMAIN DISCRIMINATORS
         feat_dim = self.encoder_s.out_channels[-1]
@@ -150,48 +152,107 @@ class IWANStage3_Adaptation(BaseModel):
     #     self.log("train_loss_entropy", loss_entropy, prog_bar=True, on_epoch=True)
     #     return total_loss
 
+    # def training_step(self, batch, batch_idx):
+    #     # ----------------------------------------------------------
+    #     # Load source & target, ensure same batch size
+    #     # ----------------------------------------------------------
+    #     x_s, y_s = self._split_batch(batch)
+    #     x_t, _ = self._split_batch(next(self.target_iter))
+    #     x_s, x_t, y_s = x_s.to(self.device), x_t.to(self.device), y_s.to(self.device)
+
+    #     bs = min(x_s.size(0), x_t.size(0))
+    #     x_s, y_s, x_t = x_s[:bs], y_s[:bs], x_t[:bs]
+
+    #     # Flatten temporal dim for ResNet encoder if present
+    #     if x_s.ndim == 5: x_s = x_s.flatten(1, 2)
+    #     if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
+
+    #     # ----------------------------------------------------------
+    #     # Forward passes (task + features)
+    #     # ----------------------------------------------------------
+    #     enc_s = self.encoder_t(x_s)
+    #     enc_t = self.encoder_t(x_t)
+    #     feat_s, feat_t = enc_s[-1], enc_t[-1]
+
+    #     logits_s = self.seg_head(self.decoder(*enc_s))
+    #     logits_t = self.seg_head(self.decoder(*enc_t))
+
+    #     # ----------------------------------------------------------
+    #     # Importance weights (IWAN) on source features
+    #     # ----------------------------------------------------------
+    #     w = self.compute_importance(feat_s).detach()
+
+    #     # ----------------------------------------------------------
+    #     # Weighted source segmentation loss (task anchor)
+    #     # ----------------------------------------------------------
+    #     bce = nn.BCEWithLogitsLoss(reduction="none", pos_weight=self.hparams.pos_class_weight)
+    #     seg_loss = bce(logits_s.squeeze(1), y_s.float())
+    #     # broadcast w over spatial dims
+    #     seg_loss = (w.view(-1, *([1] * (seg_loss.ndim - 1))) * seg_loss).mean()
+
+    #     # ----------------------------------------------------------
+    #     # Adversarial alignment (weighted on source side)
+    #     # ----------------------------------------------------------
+    #     d0_s = torch.sigmoid(self.domain_adv(self.grl(feat_s)))
+    #     d0_t = torch.sigmoid(self.domain_adv(self.grl(feat_t)))
+    #     loss_adv = -(w * torch.log(d0_s + 1e-8) + torch.log(1.0 - d0_t + 1e-8)).mean()
+
+    #     # ----------------------------------------------------------
+    #     # Target entropy minimization
+    #     # ----------------------------------------------------------
+    #     p_t = torch.sigmoid(logits_t)
+    #     entropy = -p_t * torch.log(p_t + 1e-8) - (1 - p_t) * torch.log(1 - p_t + 1e-8)
+    #     loss_entropy = entropy.mean()
+
+    #     total_loss = seg_loss + self.hparams.lambda_adv * loss_adv + self.hparams.gamma_entropy * loss_entropy
+
+    #     self.log("train_loss_seg", seg_loss, prog_bar=True, on_epoch=True)
+    #     self.log("train_loss_adv", loss_adv, prog_bar=True, on_epoch=True)
+    #     self.log("train_loss_entropy", loss_entropy, prog_bar=True, on_epoch=True)
+    #     return total_loss
+
     def training_step(self, batch, batch_idx):
-        # A. Load Source & Target Streams
-        x_s, _ = self._split_batch(batch)
-        target_batch = next(self.target_iter)
-        x_t, _ = self._split_batch(target_batch)
-        x_t = x_t.to(self.device)
+        # 1) Load source batch (with labels) and next target batch (unlabeled), keep sizes matched.
+        x_s, y_s = self._split_batch(batch)
+        x_t, _ = self._split_batch(next(self.target_iter))
+        x_s, x_t, y_s = x_s.to(self.device), x_t.to(self.device), y_s.to(self.device)
+        bs = min(x_s.size(0), x_t.size(0))
+        x_s, y_s, x_t = x_s[:bs], y_s[:bs], x_t[:bs]
 
-        # --- FIX: ENSURE BATCH SIZES MATCH ---
-        # Find the smaller of the two batch sizes (e.g., 58 vs 64)
-        batch_size = min(x_s.size(0), x_t.size(0))
-        
-        # Truncate both to the same size so the math in Eq 14 works
-        x_s = x_s[:batch_size]
-        x_t = x_t[:batch_size]
-        # -------------------------------------
-
+        # 2) Flatten temporal dim if present (ResNet expects 4D).
         if x_s.ndim == 5: x_s = x_s.flatten(1, 2)
         if x_t.ndim == 5: x_t = x_t.flatten(1, 2)
 
-        # B. Forward Passes [cite: 91, 140]
-        feat_s = self.encoder_s(x_s)[-1] 
-        feat_t = self.encoder_t(x_t)[-1] 
-        logits_t = self.seg_head(self.decoder(*self.encoder_t(x_t)))
+        # 3) Forward through the target feature extractor + task head for both domains.
+        enc_s = self.encoder_t(x_s)
+        enc_t = self.encoder_t(x_t)
+        feat_s, feat_t = enc_s[-1], enc_t[-1]
+        logits_s = self.seg_head(self.decoder(*enc_s))
+        logits_t = self.seg_head(self.decoder(*enc_t))
 
-        # C. Weighted Adversarial Loss (Eq 14 Part 2) [cite: 163]
-        w = self.compute_importance(feat_s)
-        
-        # Now w (size 58), d0_s (size 58), and d0_t (size 58) will match perfectly!
+        # 4) Importance weights (IWAN) on source features to suppress outliers.
+        w = self.compute_importance(feat_s).detach()
+
+        # 5) Weighted source segmentation loss (anchors task; head remains trainable).
+        pos_w = torch.as_tensor(self.hparams.pos_class_weight, device=self.device)
+        bce = nn.BCEWithLogitsLoss(reduction="none", pos_weight=pos_w)
+        seg_loss = bce(logits_s.squeeze(1), y_s.float())
+        seg_loss = (w.view(-1, *([1] * (seg_loss.ndim - 1))) * seg_loss).mean()
+
+        # 6) Adversarial alignment, weighted on the source side.
         d0_s = torch.sigmoid(self.domain_adv(self.grl(feat_s)))
         d0_t = torch.sigmoid(self.domain_adv(self.grl(feat_t)))
-        
-        # This line will no longer throw an error
         loss_adv = -(w * torch.log(d0_s + 1e-8) + torch.log(1.0 - d0_t + 1e-8)).mean()
 
-        # D. Target Entropy (Eq 13/14 Part 1) [cite: 154, 163]
+        # 7) Target entropy minimization for confident target predictions.
         p_t = torch.sigmoid(logits_t)
         entropy = -p_t * torch.log(p_t + 1e-8) - (1 - p_t) * torch.log(1 - p_t + 1e-8)
         loss_entropy = entropy.mean()
 
-        # E. Total Objective Function: Equation 14 [cite: 164]
-        total_loss = (self.hparams.gamma_entropy * loss_entropy) + (self.hparams.lambda_adv * loss_adv)
+        lam_adv = self._lambda_adv_factor()
+        total_loss = seg_loss + lam_adv * loss_adv + self.hparams.gamma_entropy * loss_entropy
 
+        self.log("train_loss_seg", seg_loss, prog_bar=True, on_epoch=True)
         self.log("train_loss_adv", loss_adv, prog_bar=True, on_epoch=True)
         self.log("train_loss_entropy", loss_entropy, prog_bar=True, on_epoch=True)
         return total_loss
@@ -265,8 +326,16 @@ class IWANStage3_Adaptation(BaseModel):
         return loss
 
     def configure_optimizers(self):
-        # Optimized in stages: ONLY Ft and D0 as per paper Section 3.2
+        # Ft and domain_adv share base LR; decoder/seg_head get a smaller LR for stability.
+        head_lr = self.hparams.lr * self.hparams.lr_head_scale
         return torch.optim.Adam([
-            {'params': self.encoder_t.parameters(), 'lr': self.hparams.lr},
-            {'params': self.domain_adv.parameters(), 'lr': self.hparams.lr},
+            {"params": self.encoder_t.parameters(), "lr": self.hparams.lr},
+            {"params": self.domain_adv.parameters(), "lr": self.hparams.lr},
+            {"params": list(self.decoder.parameters()) + list(self.seg_head.parameters()), "lr": head_lr},
         ])
+
+    def _lambda_adv_factor(self):
+        """Linear warmup for lambda_adv to avoid early instability."""
+        warmup = max(1, int(self.hparams.lambda_adv_warmup_epochs))
+        scale = min(1.0, (self.current_epoch + 1) / warmup)
+        return self.hparams.lambda_adv * scale
