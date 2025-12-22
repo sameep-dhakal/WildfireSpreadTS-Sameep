@@ -387,8 +387,8 @@ def diagnostic_test_stage1(stage1_dir, target_year, data_dir):
 
 if __name__ == "__main__":
     # Point this to the folder containing the checkpoints
-    STAGE1_DIR = "/develop/results/wildfire-progression/6l528lvo/checkpoints"
+    STAGE1_DIR = "/develop/results/wildfire-progression/asvp9e1m/checkpoints"
     DATA_DIR = "/develop/data/WildfireSpreadTS_2012_2015_hdf5/"
-    TARGET_YEAR = 2023
+    TARGET_YEAR = 2022
 
     diagnostic_test_stage1(STAGE1_DIR, TARGET_YEAR, DATA_DIR)
