@@ -100,14 +100,13 @@ class IWANStage3_Adaptation(BaseModel):
 
     @torch.no_grad()
     def compute_importance(self, feat):
-        """ Eq 7/8: w(z) = 1 - D*(z), normalized to mean 1."""
+        """ Eq 7/8: w(z) = 1 - D*(z), normalized to mean 1 (with optional smoothing)."""
         d_out = torch.sigmoid(self.domain_oracle(feat))
-        w_tilde = 1.0 - d_out
-
-        w = w_tilde / (w_tilde.mean() + 1e-8)
-        wsqrt = torch.sqrt(w)   
-
-        return wsqrt
+        w = 1.0 - d_out
+        w = w / (w.mean() + 1e-8)
+        w = torch.sqrt(w + 1e-8)
+        w = w / (w.mean() + 1e-8)
+        return w
 
     # def training_step(self, batch, batch_idx):
     #     x_s, _ = self._split_batch(batch)
@@ -261,7 +260,7 @@ class IWANStage3_Adaptation(BaseModel):
             prog_bar=False,
             logger=True,
         )
-        if batch_idx % 5 == 0 and hasattr(self.logger, "experiment"):
+        if batch_idx % 200 == 0 and hasattr(self.logger, "experiment"):
             try:
                 import wandb
                 self.logger.experiment.log({"w_hist": wandb.Histogram(w.detach().cpu())})
