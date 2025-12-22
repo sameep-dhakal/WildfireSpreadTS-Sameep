@@ -103,7 +103,11 @@ class IWANStage3_Adaptation(BaseModel):
         """ Eq 7/8: w(z) = 1 - D*(z), normalized to mean 1."""
         d_out = torch.sigmoid(self.domain_oracle(feat))
         w_tilde = 1.0 - d_out
-        return w_tilde / (w_tilde.mean() + 1e-8)
+
+        w = w_tilde / (w_tilde.mean() + 1e-8)
+        wsqrt = torch.sqrt(w)   
+
+        return wsqrt
 
     # def training_step(self, batch, batch_idx):
     #     x_s, _ = self._split_batch(batch)
