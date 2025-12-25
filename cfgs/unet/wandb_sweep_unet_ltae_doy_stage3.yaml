@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-stage3-sqrtweightbcepaper
+project: wildfire-domainadaptation-stage3-constweightpaper
 command:
   - ${env}
   - python
