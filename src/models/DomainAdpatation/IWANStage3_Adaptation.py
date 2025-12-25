@@ -99,14 +99,19 @@ class IWANStage3_Adaptation(BaseModel):
 
 
     @torch.no_grad()
+    # def compute_importance(self, feat):
+    #     """ Eq 7/8: w(z) = 1 - D*(z), normalized to mean 1 (with optional smoothing)."""
+    #     d_out = torch.sigmoid(self.domain_oracle(feat))
+    #     w = 1.0 - d_out
+    #     w = w / (w.mean() + 1e-8)
+    #     w = torch.sqrt(w + 1e-8)
+    #     w = w / (w.mean() + 1e-8)
+    #     return w
+
     def compute_importance(self, feat):
-        """ Eq 7/8: w(z) = 1 - D*(z), normalized to mean 1 (with optional smoothing)."""
         d_out = torch.sigmoid(self.domain_oracle(feat))
-        w = 1.0 - d_out
-        w = w / (w.mean() + 1e-8)
-        w = torch.sqrt(w + 1e-8)
-        w = w / (w.mean() + 1e-8)
-        return w
+        return torch.ones_like(d_out)
+
 
     # def training_step(self, batch, batch_idx):
     #     x_s, _ = self._split_batch(batch)
