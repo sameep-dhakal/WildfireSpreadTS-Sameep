@@ -66,7 +66,7 @@ parameters:
   #     # - 20000
   #     # - 30000
   do_validate:
-    value: false    
+    value: true    
   do_test:
     value: true
 
