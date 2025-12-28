@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-stage3-jointsegmentation
+project: wildfire-domainadaptation-stage3-jointsegmentationentropy001
 command:
   - ${env}
   - python
