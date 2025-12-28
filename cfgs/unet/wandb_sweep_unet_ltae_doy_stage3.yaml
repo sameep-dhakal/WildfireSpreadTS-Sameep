@@ -1,4 +1,4 @@
-project: wildfire-domainadaptation-stage3-constweightpaper
+project: wildfire-domainadaptation-stage3-jointsegmentation
 command:
   - ${env}
   - python
@@ -61,7 +61,6 @@ parameters:
   data.return_doy:
     value: false    
   # keep other data params as needed…
-
   do_train:
     value: true
 
