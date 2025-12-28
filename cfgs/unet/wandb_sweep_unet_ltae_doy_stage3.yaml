@@ -17,8 +17,9 @@ metric:
 parameters:
   model.class_path:
     value: models.DomainAdpatation.IWANJointSegmentation.IWANJointSegmentation
-  model.save_dir:
-    value: "/develop/results/"
+
+  # model.save_dir:
+  #   value: "/develop/results/"
 
   data.data_fold_id:
     values:
