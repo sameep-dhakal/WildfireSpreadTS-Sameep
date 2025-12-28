@@ -58,7 +58,7 @@ class IWANJointSegmentation(BaseModel):
         lambda_D: float = 1.5,
         lambda_D0: float = 1.0,
         lambda_grl: float = 1.0,
-        entropy_weight: float = 0.01,
+        entropy_weight: float = 0.1,
         lr: float = 1e-4,
         *args,
         **kwargs,
