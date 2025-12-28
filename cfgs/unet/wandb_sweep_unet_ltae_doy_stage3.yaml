@@ -70,4 +70,4 @@ parameters:
   do_validate:
     value: false     
 
-program: src/train.py  
+program: src/train_iwan_joint.py  
