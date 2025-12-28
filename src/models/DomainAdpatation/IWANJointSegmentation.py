@@ -58,7 +58,8 @@ class IWANJointSegmentation(BaseModel):
         lambda_D: float = 1.5,
         lambda_D0: float = 1.0,
         lambda_grl: float = 1.0,
-        entropy_weight: float = 0.1,
+        entropy_weight: float = 0.01,
+        lr_head_scale: float = 0.1,  # lower LR for decoder/seg head to co-adapt gently
         lr: float = 1e-4,
         *args,
         **kwargs,
@@ -83,8 +84,11 @@ class IWANJointSegmentation(BaseModel):
         self.lambda_grl = lambda_grl
         self.entropy_weight = entropy_weight
         self.lr = lr
+        self.lr_head_scale = lr_head_scale
         # We control optimization manually to separate D vs (Ft,D0) steps
         self.automatic_optimization = False
+        self._sigmoid_alpha = 1.0  # schedule parameter for lambda_D0 (paper-style)
+        self._lambda_upper = lambda_D0
 
         # ------------------------------------------------------------------
         # Segmentation backbone (must come from Stage-1 to build Fs and Ft)
@@ -112,12 +116,6 @@ class IWANJointSegmentation(BaseModel):
         for p in self.encoder_s.parameters():
             p.requires_grad_(False)
         self.encoder_s.eval()
-
-        # Freeze decoder/seg_head (classifier C in the paper)
-        for p in self.decoder.parameters():
-            p.requires_grad_(False)
-        for p in self.seg_head.parameters():
-            p.requires_grad_(False)
 
         # ------------------------------------------------------------------
         # Domain discriminators D and D0
@@ -188,11 +186,14 @@ class IWANJointSegmentation(BaseModel):
         # frozen Fs for source weights
         zs = self.encoder_s(self._flatten_input(x_s))[-1]
 
-        # trainable Ft for target (and for entropy/monitoring)
+        # trainable Ft for source (seg anchor) and target (adaptation)
+        feats_s_t = self.encoder_t(self._flatten_input(x_s))
         feats_t_t = self.encoder_t(self._flatten_input(x_t))
+        feat_s = feats_s_t[-1]
         feat_t = feats_t_t[-1]
 
-        # forward through fixed decoder/seg head (for entropy/metrics only)
+        # forward through decoder/seg head (seg anchor + entropy/metrics)
+        logits_s = self.seg_head(self.decoder(*feats_s_t))
         logits_t = self.seg_head(self.decoder(*feats_t_t))
 
         # Domain loss for D (detached features)
@@ -225,6 +226,9 @@ class IWANJointSegmentation(BaseModel):
         loss_t_D0 = self.domain_bce(log_t_D0, zeros_t).mean()
         loss_D0 = 0.5 * (loss_s_D0 + loss_t_D0)
 
+        # Source segmentation anchor to preserve task performance
+        seg_loss = self.compute_loss(logits_s.squeeze(1), y_s)
+
         # Optional entropy regularization on target predictions
         ent_loss = 0.0
         if self.entropy_weight > 0:
@@ -232,18 +236,28 @@ class IWANJointSegmentation(BaseModel):
             ent = -(p_t * torch.log(p_t + 1e-8) + (1 - p_t) * torch.log(1 - p_t + 1e-8))
             ent_loss = ent.mean()
 
-        # Eq (5/14): Total (adaptation stage) = λ_D0 L_D0 + λ_ent H(p_t); L_D already stepped separately
-        main_loss = self.lambda_D0 * loss_D0 + self.entropy_weight * ent_loss
+        # Paper-style schedule for lambda_D0: p in [0,1], lambda = 2*u/(1+exp(-alpha*p)) - u
+        progress = min(1.0, (self.trainer.global_step + 1) / max(1, self.trainer.estimated_stepping_batches))
+        lambda_sched = 2 * self._lambda_upper / (1.0 + torch.exp(torch.tensor(-self._sigmoid_alpha * progress, device=self.device))) - self._lambda_upper
+
+        # Eq (5/14) with segmentation anchor: L = L_seg + λ_D0(t) L_D0 + λ_ent H(p_t); L_D already stepped separately
+        main_loss = seg_loss + lambda_sched * loss_D0 + self.entropy_weight * ent_loss
 
         opt_main.zero_grad()
         self.manual_backward(main_loss)
         opt_main.step()
 
         self.log("train_loss", main_loss, prog_bar=True, on_epoch=True)
+        self.log("train_seg_loss", seg_loss, prog_bar=False, on_epoch=True)
         self.log("train_D_loss", loss_D, prog_bar=False, on_epoch=True)
         self.log("train_D0_loss", loss_D0, prog_bar=False, on_epoch=True)
+        self.log("lambda_D0_eff", lambda_sched, prog_bar=False, on_epoch=True)
         if self.entropy_weight > 0:
             self.log("train_ent_loss", ent_loss, prog_bar=False, on_epoch=True)
+
+        # Source segmentation metric to monitor preservation
+        self.train_f1(torch.sigmoid(logits_s).squeeze(1), y_s)
+        self.log("train_f1", self.train_f1, prog_bar=True, on_epoch=True)
 
         return {"loss": main_loss.detach()}
 
@@ -298,8 +312,11 @@ class IWANJointSegmentation(BaseModel):
     def configure_optimizers(self):
         opt_D = torch.optim.Adam(self.domain_D.parameters(), lr=self.lr)
         opt_main = torch.optim.Adam(
-            list(self.encoder_t.parameters()) + list(self.domain_D0.parameters()),
-            lr=self.lr,
+            [
+                {"params": self.encoder_t.parameters(), "lr": self.lr},
+                {"params": list(self.decoder.parameters()) + list(self.seg_head.parameters()), "lr": self.lr * self.lr_head_scale},
+                {"params": self.domain_D0.parameters(), "lr": self.lr},
+            ],
         )
         return [opt_D, opt_main]
 
