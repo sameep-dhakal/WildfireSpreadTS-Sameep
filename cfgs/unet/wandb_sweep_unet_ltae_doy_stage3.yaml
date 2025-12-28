@@ -16,7 +16,7 @@ metric:
   name: test_AP
 parameters:
   model.class_path:
-    value: models.DomainAdpatation.IWANStage3_Adaptation.IWANStage3_Adaptation
+    value: models.DomainAdpatation.IWANJointSegmentation.IWANJointSegmentation
   model.save_dir:
     value: "/develop/results/"
 
