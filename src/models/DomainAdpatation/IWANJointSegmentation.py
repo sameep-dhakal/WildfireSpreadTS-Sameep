@@ -195,8 +195,9 @@ class IWANJointSegmentation(BaseModel):
         # forward through fixed decoder/seg head (for entropy/metrics only)
         logits_t = self.seg_head(self.decoder(*feats_t_t))
 
-        ones_s = torch.ones(zs.size(0), device=self.device)
-        zeros_t = torch.zeros(feat_t.size(0), device=self.device)
+        # match logits shape for BCE
+        ones_s = torch.ones_like(log_s_D)
+        zeros_t = torch.zeros_like(log_t_D)
 
         # Domain loss for D (detached features)
         # Eq (2): L_D = 0.5 * (ℓ_bce(D(f_s),1) + ℓ_bce(D(f_t),0))
