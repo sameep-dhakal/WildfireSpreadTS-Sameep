@@ -1,0 +1,22 @@
+project: officehomedataset-domainadaptation
+program: src/models/DomainAdpatation/train_iwan_officehome.py
+command:
+  - ${env}
+  - python3
+  - ${program}
+  - ${args}
+method: grid
+metric:
+  name: tgt_acc_post_da
+  goal: maximize
+parameters:
+  data_root: {value: /develop/data/OfficeHomeDataset}
+  source: {value: Art}
+  target: {value: "Real World"}
+  batch_size: {value: 32}
+  epochs_cls: {value: 10}
+  epochs_da: {value: 20}
+  lr: {value: 0.001}
+  lambda_upper: {value: 0.1}
+  entropy_weight: {values: [0.0, 0.01, 0.05, 0.1]}
+  alpha: {value: 1.0}
