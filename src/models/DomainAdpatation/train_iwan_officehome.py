@@ -53,14 +53,25 @@ class ClassifierNet(nn.Module):
 
 
 class DomainDiscriminator(nn.Module):
-    """Two-layer MLP as in IWAN."""
-    def __init__(self, in_dim: int = 512, hidden: int = 1024):
+    """Two-layer MLP as in IWAN (default) or deeper 3x1024 if head='mlp3'."""
+    def __init__(self, in_dim: int = 512, hidden: int = 1024, head: str = "iwan"):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(in_dim, hidden),
-            nn.ReLU(inplace=True),
-            nn.Linear(hidden, 1),
-        )
+        if head.lower() == "mlp3":
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, hidden),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.1),
+                nn.Linear(hidden, hidden),
+                nn.ReLU(inplace=True),
+                nn.Dropout(0.1),
+                nn.Linear(hidden, 1),
+            )
+        else:  # default IWAN 2-layer
+            self.net = nn.Sequential(
+                nn.Linear(in_dim, hidden),
+                nn.ReLU(inplace=True),
+                nn.Linear(hidden, 1),
+            )
 
     def forward(self, x):
         return self.net(x).squeeze(1)
@@ -154,7 +165,7 @@ def eval_acc(model, loader, device):
     return correct / max(1, total)
 
 
-def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0):
+def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan"):
     # Freeze Fs (teacher) and classifier C; only Ft, D, D0 update (paper setup)
     Fs = deepcopy(model.backbone).to(device).eval()
     for p in Fs.parameters():
@@ -165,8 +176,8 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
     for p in C.parameters():
         p.requires_grad_(False)
 
-    D = DomainDiscriminator(in_dim=C.in_features).to(device)
-    D0 = DomainDiscriminator(in_dim=C.in_features).to(device)
+    D = DomainDiscriminator(in_dim=C.in_features, head=domain_head).to(device)
+    D0 = DomainDiscriminator(in_dim=C.in_features, head=domain_head).to(device)
 
     opt_D = torch.optim.SGD(D.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
     opt_main = torch.optim.SGD(list(Ft.parameters()) + list(D0.parameters()),
@@ -256,6 +267,7 @@ def parse_args():
     p.add_argument("--lambda_upper", type=float, default=0.1)
     p.add_argument("--entropy_weight", type=float, default=0.0)
     p.add_argument("--alpha", type=float, default=1.0)
+    p.add_argument("--domain_head", type=str, default="iwan", choices=["iwan", "mlp3"], help="Discriminator head type.")
     p.add_argument("--wandb_project", type=str, default=None, help="If set, log metrics to this W&B project.")
     p.add_argument("--wandb_run_name", type=str, default=None)
     p.add_argument("--wandb_entity", type=str, default=None)
@@ -317,6 +329,7 @@ def main():
         lambda_upper=args.lambda_upper,
         alpha=args.alpha,
         entropy_weight=args.entropy_weight,
+        domain_head=args.domain_head,
     )
     tgt_acc = eval_acc(model, tgt_loader, device)
     print(f"Post-adaptation target acc={tgt_acc:.4f}")
