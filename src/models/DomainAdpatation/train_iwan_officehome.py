@@ -165,7 +165,7 @@ def eval_acc(model, loader, device):
     return correct / max(1, total)
 
 
-def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan"):
+def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.05, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan"):
     # Freeze Fs (teacher) and classifier C; only Ft, D, D0 update (paper setup)
     Fs = deepcopy(model.backbone).to(device).eval()
     for p in Fs.parameters():
@@ -249,7 +249,12 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
 
             global_step += 1
         acc = eval_acc(model, loader_t, device)
-        print(f"[DA] Epoch {ep+1}/{epochs} target_acc={acc:.4f} seg={seg_loss.item():.4f} D0={loss_D0.item():.4f} lam={lambda_sched.item():.4f}")
+        # Lightweight stats
+        w_mean = w_s.mean().item()
+        w_std = w_s.std().item()
+        w_min = w_s.min().item()
+        w_max = w_s.max().item()
+        print(f"[DA] Epoch {ep+1}/{epochs} target_acc={acc:.4f} D={loss_D.item():.4f} D0={loss_D0.item():.4f} lam={lambda_sched.item():.4f} w_mean={w_mean:.4f} w_std={w_std:.4f} w_min={w_min:.4f} w_max={w_max:.4f}")
     return model
 
 
