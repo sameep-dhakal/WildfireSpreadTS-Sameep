@@ -245,9 +245,9 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--config", type=str, default=None, help="Optional YAML config path.")
-    p.add_argument("--data_root", type=str, required=True, help="Path to Office-Home root.")
-    p.add_argument("--source", type=str, required=True, help="Source domain (e.g., Art)")
-    p.add_argument("--target", type=str, required=True, help="Target domain (e.g., Clipart)")
+    p.add_argument("--data_root", type=str, default=None, help="Path to Office-Home root.")
+    p.add_argument("--source", type=str, default=None, help="Source domain (e.g., Art)")
+    p.add_argument("--target", type=str, default=None, help="Target domain (e.g., Clipart)")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--num_workers", type=int, default=4)
     p.add_argument("--epochs_cls", type=int, default=10)
@@ -270,6 +270,10 @@ def parse_args():
             if hasattr(args, k):
                 if getattr(args, k) == getattr(defaults, k):
                     setattr(args, k, v)
+    # Validate required fields
+    missing = [k for k in ["data_root", "source", "target"] if getattr(args, k) is None]
+    if missing and os.getenv("WANDB_SWEEP_ID") is None:
+        raise ValueError(f"Missing required arguments: {missing}. Pass via CLI, config, or sweep.")
     return args
 
 
