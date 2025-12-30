@@ -184,8 +184,14 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
     Fs = deepcopy(model.backbone).to(device).eval()
     for p in Fs.parameters():
         p.requires_grad_(False)
+    Fs_bottleneck = None
+    if hasattr(model, "bottleneck") and model.bottleneck is not None:
+        Fs_bottleneck = deepcopy(model.bottleneck).to(device).eval()
+        for p in Fs_bottleneck.parameters():
+            p.requires_grad_(False)
 
     Ft = model.backbone
+    bottleneck = model.bottleneck
     C = model.classifier
     for p in C.parameters():
         p.requires_grad_(False)
@@ -193,9 +199,11 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
     D = DomainDiscriminator(in_dim=C.in_features, head=domain_head).to(device)
     D0 = DomainDiscriminator(in_dim=C.in_features, head=domain_head).to(device)
 
+    main_params = list(Ft.parameters()) + list(D0.parameters())
+    if bottleneck is not None:
+        main_params += list(bottleneck.parameters())
     opt_D = torch.optim.SGD(D.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
-    opt_main = torch.optim.SGD(list(Ft.parameters()) + list(D0.parameters()),
-                               lr=lr, momentum=0.9, weight_decay=5e-4)
+    opt_main = torch.optim.SGD(main_params, lr=lr, momentum=0.9, weight_decay=5e-4)
 
     ce = nn.CrossEntropyLoss()
     bce = nn.BCEWithLogitsLoss(reduction="none")
@@ -213,9 +221,14 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
             # Forward Fs for weights
             with torch.no_grad():
                 zs = Fs(x_s)
-            # Forward Ft
+                if Fs_bottleneck is not None:
+                    zs = Fs_bottleneck(zs)
+            # Forward Ft (with bottleneck if present)
             ft_s = Ft(x_s)
             ft_t = Ft(x_t)
+            if bottleneck is not None:
+                ft_s = bottleneck(ft_s)
+                ft_t = bottleneck(ft_t)
             logits_s = C(ft_s)
             logits_t = C(ft_t)
 
@@ -280,11 +293,11 @@ def parse_args():
     p.add_argument("--target", type=str, default=None, help="Target domain (e.g., Clipart)")
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--num_workers", type=int, default=4)
-    p.add_argument("--epochs_cls", type=int, default=10)
-    p.add_argument("--epochs_da", type=int, default=20)
+    p.add_argument("--epochs_cls", type=int, default=50)
+    p.add_argument("--epochs_da", type=int, default=80)
     p.add_argument("--lr", type=float, default=1e-3)
-    p.add_argument("--arch", type=str, default="resnet18", choices=["resnet18", "resnet50"])
-    p.add_argument("--bottleneck_dim", type=int, default=0)
+    p.add_argument("--arch", type=str, default="resnet50", choices=["resnet18", "resnet50"])
+    p.add_argument("--bottleneck_dim", type=int, default=256)
     p.add_argument("--lambda_upper", type=float, default=0.1)
     p.add_argument("--entropy_weight", type=float, default=0.0)
     p.add_argument("--alpha", type=float, default=1.0)
