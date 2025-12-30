@@ -29,7 +29,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 import wandb
 import yaml
 
@@ -109,7 +109,7 @@ def grad_reverse(x, lambd=1.0):
 # -------------------------------
 # Data
 # -------------------------------
-def make_loaders(root: str, source: str, target: str, batch_size: int, num_workers: int) -> Tuple[DataLoader, DataLoader, int]:
+def make_loaders(root: str, source: str, target: str, batch_size: int, num_workers: int, val_split: float = 0.1) -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader, int]:
     normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     train_tf = T.Compose([
         T.Resize(256),
@@ -125,25 +125,36 @@ def make_loaders(root: str, source: str, target: str, batch_size: int, num_worke
         normalize,
     ])
 
-    src_ds = torchvision.datasets.ImageFolder(os.path.join(root, source), transform=train_tf)
-    tgt_ds = torchvision.datasets.ImageFolder(os.path.join(root, target), transform=train_tf)
+    src_ds_full = torchvision.datasets.ImageFolder(os.path.join(root, source), transform=train_tf)
+    tgt_ds_full = torchvision.datasets.ImageFolder(os.path.join(root, target), transform=train_tf)
 
-    src_loader = DataLoader(src_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
-    tgt_loader = DataLoader(tgt_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    # split source into train/val
+    val_size_s = int(len(src_ds_full) * val_split)
+    train_size_s = len(src_ds_full) - val_size_s
+    src_train_ds, src_val_ds = random_split(src_ds_full, [train_size_s, val_size_s], generator=torch.Generator().manual_seed(42))
+    # target split (for logging only)
+    val_size_t = int(len(tgt_ds_full) * val_split)
+    train_size_t = len(tgt_ds_full) - val_size_t
+    tgt_train_ds, tgt_val_ds = random_split(tgt_ds_full, [train_size_t, val_size_t], generator=torch.Generator().manual_seed(42))
 
-    num_classes = len(src_ds.classes)
-    return src_loader, tgt_loader, num_classes
+    src_loader = DataLoader(src_train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    src_val_loader = DataLoader(src_val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=False)
+    tgt_loader = DataLoader(tgt_train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    tgt_val_loader = DataLoader(tgt_val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, drop_last=False)
+
+    num_classes = len(src_ds_full.classes)
+    return src_loader, src_val_loader, tgt_loader, tgt_val_loader, num_classes
 
 
 # -------------------------------
 # Training loops
 # -------------------------------
-def train_cls(model, loader, device, epochs, lr, patience=0):
+def train_cls(model, loader, val_loader, device, epochs, lr, patience=0):
     model.to(device)
     opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs * len(loader))
     ce = nn.CrossEntropyLoss()
-    best_acc = 0.0
+    best_metric = float("inf")
     best_state = None
     no_improve = 0
 
@@ -157,19 +168,19 @@ def train_cls(model, loader, device, epochs, lr, patience=0):
             loss.backward()
             opt.step()
             sched.step()
-        acc = eval_acc(model, loader, device)
-        if acc > best_acc:
-            best_acc = acc
+        val_loss = eval_ce(model, val_loader if val_loader is not None else loader, device, ce)
+        if val_loss < best_metric:
+            best_metric = val_loss
             best_state = deepcopy(model.state_dict())
             no_improve = 0
-        print(f"[CLS] Epoch {ep+1}/{epochs} acc={acc:.4f} best={best_acc:.4f}")
+        print(f"[CLS] Epoch {ep+1}/{epochs} val_loss={val_loss:.4f} best={best_metric:.4f}")
         no_improve += 1
         if patience > 0 and no_improve >= patience:
             print(f"[CLS] Early stopping at epoch {ep+1} (patience={patience})")
             break
     if best_state:
         model.load_state_dict(best_state)
-    return model
+    return model, best_state
 
 
 def eval_acc(model, loader, device):
@@ -185,7 +196,21 @@ def eval_acc(model, loader, device):
     return correct / max(1, total)
 
 
-def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan", patience=0):
+def eval_ce(model, loader, device, loss_fn):
+    model.eval()
+    total_loss = 0.0
+    total = 0
+    with torch.no_grad():
+        for x, y in loader:
+            x, y = x.to(device), y.to(device)
+            logits, _ = model(x)
+            loss = loss_fn(logits, y)
+            total_loss += loss.item() * y.size(0)
+            total += y.size(0)
+    return total_loss / max(1, total)
+
+
+def train_iwan(model, loader_s, loader_t, val_loader_s, val_loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan", patience=0):
     # Freeze Fs (teacher) and classifier C; only Ft, D, D0 update (paper setup)
     Fs = deepcopy(model.backbone).to(device).eval()
     for p in Fs.parameters():
@@ -216,7 +241,8 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
 
     steps_per_epoch = min(len(loader_s), len(loader_t))
     global_step = 0
-    best_tgt_acc = 0.0
+    best_metric = float("inf")
+    best_state = None
     no_improve = 0
     for ep in range(epochs):
         it_s = iter(loader_s)
@@ -283,22 +309,32 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
             opt_main.step()
 
             global_step += 1
-        acc = eval_acc(model, loader_t, device)
+        acc = eval_acc(model, val_loader_t if val_loader_t is not None else loader_t, device)
+        src_val_acc = eval_acc(model, val_loader_s if val_loader_s is not None else loader_s, device)
+        # Monitor target CE for early stopping (if labels available); fallback to src CE otherwise
+        monitor_loss = None
+        if val_loader_t is not None:
+            monitor_loss = eval_ce(model, val_loader_t, device, ce)
+        else:
+            monitor_loss = eval_ce(model, val_loader_s if val_loader_s is not None else loader_s, device, ce)
         # Lightweight stats
         w_mean = w_s.mean().item()
         w_std = w_s.std().item()
         w_min = w_s.min().item()
         w_max = w_s.max().item()
-        print(f"[DA] Epoch {ep+1}/{epochs} target_acc={acc:.4f} D={loss_D.item():.4f} D0={loss_D0.item():.4f} lam={lambda_sched.item():.4f} w_mean={w_mean:.4f} w_std={w_std:.4f} w_min={w_min:.4f} w_max={w_max:.4f}")
-        if acc > best_tgt_acc:
-            best_tgt_acc = acc
+        print(f"[DA] Epoch {ep+1}/{epochs} target_acc={acc:.4f} src_val_acc={src_val_acc:.4f} tgt_val_loss={monitor_loss:.4f} D={loss_D.item():.4f} D0={loss_D0.item():.4f} lam={lambda_sched.item():.4f} w_mean={w_mean:.4f} w_std={w_std:.4f} w_min={w_min:.4f} w_max={w_max:.4f}")
+        if monitor_loss < best_metric:
+            best_metric = monitor_loss
             no_improve = 0
+            best_state = deepcopy(model.state_dict())
         else:
             no_improve += 1
         if patience > 0 and no_improve >= patience:
             print(f"[DA] Early stopping at epoch {ep+1} (patience={patience})")
             break
-    return model
+    if best_state:
+        model.load_state_dict(best_state)
+    return model, best_state
 
 
 def parse_args():
@@ -354,7 +390,7 @@ def main():
             config=vars(args),
         )
 
-    src_loader, tgt_loader, num_classes = make_loaders(
+    src_loader, src_val_loader, tgt_loader, tgt_val_loader, num_classes = make_loaders(
         args.data_root, args.source, args.target, args.batch_size, args.num_workers
     )
 
@@ -362,19 +398,21 @@ def main():
 
     # Stage-1: source pretrain
     print("==> Stage-1: source pretraining")
-    model = train_cls(model, src_loader, device, epochs=args.epochs_cls, lr=args.lr, patience=args.patience_cls)
-    src_acc = eval_acc(model, src_loader, device)
-    tgt_acc = eval_acc(model, tgt_loader, device)
-    print(f"Source pretrain done. Src acc={src_acc:.4f} Tgt acc={tgt_acc:.4f}")
+    model, pretrain_state = train_cls(model, src_loader, src_val_loader, device, epochs=args.epochs_cls, lr=args.lr, patience=args.patience_cls)
+    src_acc = eval_acc(model, src_val_loader, device)
+    tgt_acc = eval_acc(model, tgt_val_loader, device)
+    print(f"Source pretrain done. Src val acc={src_acc:.4f} Tgt val acc={tgt_acc:.4f}")
     if use_wandb:
         wandb.log({"src_acc_pretrain": src_acc, "tgt_acc_pretrain": tgt_acc})
 
     # Stage-2: IWAN
     print("==> Stage-2: IWAN adaptation")
-    model = train_iwan(
+    model, da_state = train_iwan(
         model,
         loader_s=src_loader,
         loader_t=tgt_loader,
+        val_loader_s=src_val_loader,
+        val_loader_t=tgt_val_loader,
         device=device,
         epochs=args.epochs_da,
         lr=args.lr,
@@ -384,8 +422,8 @@ def main():
         domain_head=args.domain_head,
         patience=args.patience_da,
     )
-    tgt_acc = eval_acc(model, tgt_loader, device)
-    print(f"Post-adaptation target acc={tgt_acc:.4f}")
+    tgt_acc = eval_acc(model, tgt_val_loader, device)
+    print(f"Post-adaptation target val acc={tgt_acc:.4f}")
     if use_wandb:
         wandb.log({"tgt_acc_post_da": tgt_acc})
         wandb.finish()

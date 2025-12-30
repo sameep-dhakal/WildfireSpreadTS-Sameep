@@ -23,4 +23,4 @@ parameters:
   arch: {value: resnet50}
   bottleneck_dim: {value: 256}
   patience_cls: {value: 20}
-  patience_da: {value: 20}
+  patience_da: {value: 0}
