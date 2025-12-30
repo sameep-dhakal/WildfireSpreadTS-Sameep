@@ -138,13 +138,14 @@ def make_loaders(root: str, source: str, target: str, batch_size: int, num_worke
 # -------------------------------
 # Training loops
 # -------------------------------
-def train_cls(model, loader, device, epochs, lr):
+def train_cls(model, loader, device, epochs, lr, patience=0):
     model.to(device)
     opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs * len(loader))
     ce = nn.CrossEntropyLoss()
     best_acc = 0.0
     best_state = None
+    no_improve = 0
 
     for ep in range(epochs):
         model.train()
@@ -160,7 +161,12 @@ def train_cls(model, loader, device, epochs, lr):
         if acc > best_acc:
             best_acc = acc
             best_state = deepcopy(model.state_dict())
+            no_improve = 0
         print(f"[CLS] Epoch {ep+1}/{epochs} acc={acc:.4f} best={best_acc:.4f}")
+        no_improve += 1
+        if patience > 0 and no_improve >= patience:
+            print(f"[CLS] Early stopping at epoch {ep+1} (patience={patience})")
+            break
     if best_state:
         model.load_state_dict(best_state)
     return model
@@ -179,7 +185,7 @@ def eval_acc(model, loader, device):
     return correct / max(1, total)
 
 
-def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan"):
+def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan", patience=0):
     # Freeze Fs (teacher) and classifier C; only Ft, D, D0 update (paper setup)
     Fs = deepcopy(model.backbone).to(device).eval()
     for p in Fs.parameters():
@@ -210,6 +216,8 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
 
     steps_per_epoch = min(len(loader_s), len(loader_t))
     global_step = 0
+    best_tgt_acc = 0.0
+    no_improve = 0
     for ep in range(epochs):
         it_s = iter(loader_s)
         it_t = iter(loader_t)
@@ -282,6 +290,14 @@ def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, 
         w_min = w_s.min().item()
         w_max = w_s.max().item()
         print(f"[DA] Epoch {ep+1}/{epochs} target_acc={acc:.4f} D={loss_D.item():.4f} D0={loss_D0.item():.4f} lam={lambda_sched.item():.4f} w_mean={w_mean:.4f} w_std={w_std:.4f} w_min={w_min:.4f} w_max={w_max:.4f}")
+        if acc > best_tgt_acc:
+            best_tgt_acc = acc
+            no_improve = 0
+        else:
+            no_improve += 1
+        if patience > 0 and no_improve >= patience:
+            print(f"[DA] Early stopping at epoch {ep+1} (patience={patience})")
+            break
     return model
 
 
@@ -295,6 +311,8 @@ def parse_args():
     p.add_argument("--num_workers", type=int, default=4)
     p.add_argument("--epochs_cls", type=int, default=50)
     p.add_argument("--epochs_da", type=int, default=80)
+    p.add_argument("--patience_cls", type=int, default=0, help="Early stop patience for source pretrain (0=off).")
+    p.add_argument("--patience_da", type=int, default=0, help="Early stop patience for DA on target acc (0=off).")
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--arch", type=str, default="resnet50", choices=["resnet18", "resnet50"])
     p.add_argument("--bottleneck_dim", type=int, default=256)
@@ -344,7 +362,7 @@ def main():
 
     # Stage-1: source pretrain
     print("==> Stage-1: source pretraining")
-    model = train_cls(model, src_loader, device, epochs=args.epochs_cls, lr=args.lr)
+    model = train_cls(model, src_loader, device, epochs=args.epochs_cls, lr=args.lr, patience=args.patience_cls)
     src_acc = eval_acc(model, src_loader, device)
     tgt_acc = eval_acc(model, tgt_loader, device)
     print(f"Source pretrain done. Src acc={src_acc:.4f} Tgt acc={tgt_acc:.4f}")
@@ -364,6 +382,7 @@ def main():
         alpha=args.alpha,
         entropy_weight=args.entropy_weight,
         domain_head=args.domain_head,
+        patience=args.patience_da,
     )
     tgt_acc = eval_acc(model, tgt_loader, device)
     print(f"Post-adaptation target acc={tgt_acc:.4f}")
