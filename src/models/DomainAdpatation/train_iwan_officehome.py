@@ -210,7 +210,7 @@ def eval_ce(model, loader, device, loss_fn):
     return total_loss / max(1, total)
 
 
-def train_iwan(model, loader_s, loader_t, val_loader_s, val_loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan", patience=0):
+def train_iwan(model, loader_s, loader_t, val_loader_s, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan", patience=0):
     # Freeze Fs (teacher) and classifier C; only Ft, D, D0 update (paper setup)
     Fs = deepcopy(model.backbone).to(device).eval()
     for p in Fs.parameters():
@@ -309,20 +309,15 @@ def train_iwan(model, loader_s, loader_t, val_loader_s, val_loader_t, device, ep
             opt_main.step()
 
             global_step += 1
-        acc = eval_acc(model, val_loader_t if val_loader_t is not None else loader_t, device)
-        src_val_acc = eval_acc(model, val_loader_s if val_loader_s is not None else loader_s, device)
-        # Monitor target CE for early stopping (if labels available); fallback to src CE otherwise
-        monitor_loss = None
-        if val_loader_t is not None:
-            monitor_loss = eval_ce(model, val_loader_t, device, ce)
-        else:
-            monitor_loss = eval_ce(model, val_loader_s if val_loader_s is not None else loader_s, device, ce)
+        acc = eval_acc(model, val_loader_s if val_loader_s is not None else loader_s, device)
+        # Monitor source CE for early stopping (no target labels)
+        monitor_loss = eval_ce(model, val_loader_s if val_loader_s is not None else loader_s, device, ce)
         # Lightweight stats
         w_mean = w_s.mean().item()
         w_std = w_s.std().item()
         w_min = w_s.min().item()
         w_max = w_s.max().item()
-        print(f"[DA] Epoch {ep+1}/{epochs} target_acc={acc:.4f} src_val_acc={src_val_acc:.4f} tgt_val_loss={monitor_loss:.4f} D={loss_D.item():.4f} D0={loss_D0.item():.4f} lam={lambda_sched.item():.4f} w_mean={w_mean:.4f} w_std={w_std:.4f} w_min={w_min:.4f} w_max={w_max:.4f}")
+        print(f"[DA] Epoch {ep+1}/{epochs} src_val_acc={acc:.4f} src_val_loss={monitor_loss:.4f} D={loss_D.item():.4f} D0={loss_D0.item():.4f} lam={lambda_sched.item():.4f} w_mean={w_mean:.4f} w_std={w_std:.4f} w_min={w_min:.4f} w_max={w_max:.4f}")
         if monitor_loss < best_metric:
             best_metric = monitor_loss
             no_improve = 0
@@ -351,7 +346,7 @@ def parse_args():
     p.add_argument("--patience_da", type=int, default=0, help="Early stop patience for DA on target acc (0=off).")
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--arch", type=str, default="resnet50", choices=["resnet18", "resnet50"])
-    p.add_argument("--bottleneck_dim", type=int, default=256)
+    p.add_argument("--bottleneck_dim", type=int, default=0)
     p.add_argument("--lambda_upper", type=float, default=0.1)
     p.add_argument("--entropy_weight", type=float, default=0.0)
     p.add_argument("--alpha", type=float, default=1.0)
@@ -412,7 +407,6 @@ def main():
         loader_s=src_loader,
         loader_t=tgt_loader,
         val_loader_s=src_val_loader,
-        val_loader_t=tgt_val_loader,
         device=device,
         epochs=args.epochs_da,
         lr=args.lr,

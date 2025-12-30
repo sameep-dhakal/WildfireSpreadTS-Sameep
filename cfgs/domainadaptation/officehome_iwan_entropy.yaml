@@ -11,12 +11,12 @@ metric:
   goal: maximize
 parameters:
   data_root: {value: /develop/data/OfficeHomeDataset}
-  source: {value: Art}
+  source: {value: Product}
   target: {value: "Real World"}
-  batch_size: {value: 32}
+  batch_size: {value: 64}
   epochs_cls: {value: 200}
   epochs_da: {value: 250}
-  lr: {value: 0.0001}
+  lr: {value: 0.0001, 0.00001}
   lambda_upper: {value: 0.1}
   entropy_weight: {values: [0.0, 0.01, 0.05, 0.1]}
   alpha: {value: 1.0}
