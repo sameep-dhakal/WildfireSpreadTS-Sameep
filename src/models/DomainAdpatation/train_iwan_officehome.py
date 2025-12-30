@@ -38,16 +38,30 @@ import yaml
 # Models
 # -------------------------------
 class ClassifierNet(nn.Module):
-    def __init__(self, num_classes: int):
+    def __init__(self, num_classes: int, arch: str = "resnet18", bottleneck_dim: int = 0):
         super().__init__()
-        backbone = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1)
+        if arch == "resnet50":
+            backbone = torchvision.models.resnet50(weights=torchvision.models.ResNet50_Weights.IMAGENET1K_V2)
+        else:
+            backbone = torchvision.models.resnet18(weights=torchvision.models.ResNet18_Weights.IMAGENET1K_V1)
         in_feat = backbone.fc.in_features
         backbone.fc = nn.Identity()
         self.backbone = backbone
-        self.classifier = nn.Linear(in_feat, num_classes)
+        if bottleneck_dim and bottleneck_dim > 0:
+            self.bottleneck = nn.Sequential(
+                nn.Linear(in_feat, bottleneck_dim),
+                nn.ReLU(inplace=True),
+            )
+            head_in = bottleneck_dim
+        else:
+            self.bottleneck = None
+            head_in = in_feat
+        self.classifier = nn.Linear(head_in, num_classes)
 
     def forward(self, x):
         feats = self.backbone(x)
+        if self.bottleneck is not None:
+            feats = self.bottleneck(feats)
         logits = self.classifier(feats)
         return logits, feats
 
@@ -165,7 +179,7 @@ def eval_acc(model, loader, device):
     return correct / max(1, total)
 
 
-def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.05, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan"):
+def train_iwan(model, loader_s, loader_t, device, epochs, lr, lambda_upper=0.1, alpha=1.0, entropy_weight=0.0, domain_head: str = "iwan"):
     # Freeze Fs (teacher) and classifier C; only Ft, D, D0 update (paper setup)
     Fs = deepcopy(model.backbone).to(device).eval()
     for p in Fs.parameters():
@@ -269,6 +283,8 @@ def parse_args():
     p.add_argument("--epochs_cls", type=int, default=10)
     p.add_argument("--epochs_da", type=int, default=20)
     p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--arch", type=str, default="resnet18", choices=["resnet18", "resnet50"])
+    p.add_argument("--bottleneck_dim", type=int, default=0)
     p.add_argument("--lambda_upper", type=float, default=0.1)
     p.add_argument("--entropy_weight", type=float, default=0.0)
     p.add_argument("--alpha", type=float, default=1.0)
@@ -311,7 +327,7 @@ def main():
         args.data_root, args.source, args.target, args.batch_size, args.num_workers
     )
 
-    model = ClassifierNet(num_classes=num_classes)
+    model = ClassifierNet(num_classes=num_classes, arch=args.arch, bottleneck_dim=args.bottleneck_dim)
 
     # Stage-1: source pretrain
     print("==> Stage-1: source pretraining")
