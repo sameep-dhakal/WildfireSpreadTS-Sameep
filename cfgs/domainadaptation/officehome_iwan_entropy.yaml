@@ -7,20 +7,33 @@ command:
   - ${args}
 method: grid
 metric:
-  name: tgt_acc_post_da
+  name: tgt_acc_post
   goal: maximize
 parameters:
   data_root: {value: /develop/data/OfficeHomeDataset}
   source: {value: Product}
   target: {value: "Real World"}
+
   batch_size: {value: 64}
-  epochs_cls: {value: 200}
-  epochs_da: {value: 250}
-  lr: {values: [0.001]}
-  lambda_upper: {value: 0.1}
-  entropy_weight: {values: [0.0, 0.01, 0.05, 0.1]}
-  alpha: {value: 1.0}
+  num_workers: {value: 4}
+  val_split: {value: 0.1}
+
+  partial_k: {value: 25}
+  partial_seed: {value: 0}
+  split_seed: {value: 42}
+
   arch: {value: resnet50}
   bottleneck_dim: {value: 256}
+  freeze_bn: {value: 1}
+
+  epochs_cls: {value: 200}
+  lr_cls: {values: [0.001]}
   patience_cls: {value: 20}
+
+  epochs_da: {value: 250}
+  lr_da: {values: [0.001]}
   patience_da: {value: 0}
+
+  lambda_upper: {value: 0.1}
+  alpha: {value: 1.0}
+  entropy_weight: {values: [0.0, 0.01, 0.05, 0.1]}
