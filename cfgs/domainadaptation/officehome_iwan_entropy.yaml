@@ -32,7 +32,7 @@ parameters:
   lr_cls: {value: 0.001}
   lr_da: {value: 0.001}
 
-  patience_cls: {value: 20}
+  patience_cls: {value: 0}
   patience_da: {value: 0}
 
   lambda_upper: {value: 0.1}
