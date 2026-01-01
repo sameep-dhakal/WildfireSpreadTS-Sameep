@@ -36,5 +36,5 @@ parameters:
   split_seed: {value: 42}
 
   # you will sweep the 6 directions by changing these
-  source: {values: [Amazon, DSLR, Webcam]}
-  target: {values: [Amazon, DSLR, Webcam]}
+  source: {values: [amazon, dslr, webcam]}
+  target: {values: [amazon, dslr, webcam]}
