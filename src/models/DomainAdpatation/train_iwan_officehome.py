@@ -114,6 +114,11 @@ def ensure_dir(p: str):
     os.makedirs(p, exist_ok=True)
 
 
+def set_lr(opt: torch.optim.Optimizer, lr: float):
+    for pg in opt.param_groups:
+        pg["lr"] = lr
+
+
 def maybe_init_wandb(args):
     """
     Start a wandb run if the package is available and not disabled.
@@ -141,6 +146,14 @@ def lambda_schedule(progress: float, lambda_upper: float, alpha: float, device: 
     p = torch.tensor(float(progress), device=device)
     val = 2.0 * lambda_upper / (1.0 + torch.exp(-alpha * p)) - lambda_upper
     return float(val.item())
+
+
+def inv_lr(base_lr: float, progress: float, gamma: float = 10.0, power: float = 0.75) -> float:
+    """
+    Standard DA LR decay: lr = lr0 / (1 + gamma * p) ** power, with p in [0,1].
+    Matches the schedule used in many Office-31 PDA baselines.
+    """
+    return float(base_lr / ((1.0 + gamma * progress) ** power))
 
 
 # -------------------------------
@@ -291,6 +304,10 @@ def write_split_lists_if_missing(
     if os.path.exists(tr_file) and os.path.exists(te_file):
         return
 
+    print(
+        "[WARN] Official list files not found; auto-splitting this run. "
+        "This will NOT match the paper numbers. Provide the Office-31 list files in list_root to replicate Table 3."
+    )
     domain_root = os.path.join(data_root, domain)
     # Collect all image paths
     all_items: List[Tuple[str, int]] = []
@@ -601,10 +618,17 @@ def train_source(
     best = float("inf")
     best_state = None
     bad = 0
+    steps_per_epoch = len(src_train)
+    total_steps = max(1, epochs * steps_per_epoch)
+    global_step = 0
 
     for ep in range(epochs):
         model.train()
         for x, y in src_train:
+            progress = min(1.0, global_step / total_steps)
+            lr_cur = inv_lr(lr, progress)
+            set_lr(opt, lr_cur)
+
             x = x.to(device)
             y = y.to(device)
             logits, _ = model(x)
@@ -612,6 +636,7 @@ def train_source(
             opt.zero_grad()
             loss.backward()
             opt.step()
+            global_step += 1
 
         te_loss = eval_ce(model, src_test, device)
         if te_loss < best:
@@ -624,7 +649,13 @@ def train_source(
         print(f"[CLS] ep {ep+1}/{epochs} src_test_ce={te_loss:.4f} best={best:.4f}")
         if wandb_run is not None:
             wandb_run.log(
-                {"stage": "cls", "epoch_cls": ep + 1, "src_test_ce": te_loss, "src_best_ce": best},
+                {
+                    "stage": "cls",
+                    "epoch_cls": ep + 1,
+                    "src_test_ce": te_loss,
+                    "src_best_ce": best,
+                    "lr_cls": lr_cur,
+                },
                 step=ep + 1,
             )
         if patience > 0 and bad >= patience:
@@ -757,6 +788,9 @@ def train_iwan(
 
             # 5) Adversarial alignment via D0 with GRL
             progress = min(1.0, global_step / max(1, epochs * steps_per_epoch))
+            lr_cur = inv_lr(lr, progress)
+            set_lr(opt_D, lr_cur)
+            set_lr(opt_main, lr_cur)
             lam = lambda_schedule(progress, lambda_upper=lambda_upper, alpha=alpha, device=device)
 
             log_s_D0 = D0(z_s_fs.detach())                 # source (frozen features)
@@ -789,6 +823,7 @@ def train_iwan(
                 "loss_cls": float(loss_cls.item()),
                 "loss_ent": float(loss_ent.item()),
                 "lam": float(lam),
+                "lr": float(lr_cur),
                 "w_mean": float(w.mean().item()),
                 "w_std": float(w.std().item()),
                 "w_min": float(w.min().item()),
@@ -816,6 +851,7 @@ def train_iwan(
                     "loss_cls": last_stats.get("loss_cls", 0.0),
                     "loss_ent": last_stats.get("loss_ent", 0.0),
                     "lambda": last_stats.get("lam", 0.0),
+                    "lr_da": last_stats.get("lr", 0.0),
                     "w_mean": last_stats.get("w_mean", 0.0),
                     "w_std": last_stats.get("w_std", 0.0),
                     "w_min": last_stats.get("w_min", 0.0),

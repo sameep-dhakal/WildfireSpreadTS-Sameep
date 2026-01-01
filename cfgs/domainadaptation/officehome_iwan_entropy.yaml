@@ -16,8 +16,8 @@ parameters:
   list_root: {value: /develop/data/Office-31}   # ✅ add this
 
 
-  source: {values: [amazon, dslr, webcam]}
-  target: {values: [amazon, dslr, webcam]}
+  source: {values: [amazon,]}
+  target: {values: [dslr, webcam]}
 
   test_ratio: {value: 0.3}     # important for table-like evaluation
   split_seed: {value: 42}
@@ -36,5 +36,5 @@ parameters:
   patience_da: {value: 0}
 
   lambda_upper: {value: 0.1}
-  alpha: {value: 10.0}
+  alpha: {values: [1.0, 10.0]}
   entropy_weight: {values: [0.0, 0.01, 0.1]}
