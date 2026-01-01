@@ -36,5 +36,5 @@ parameters:
   patience_da: {value: 0}
 
   lambda_upper: {value: 0.1}
-  alpha: {value: 1.0}
+  alpha: {value: 10.0}
   entropy_weight: {values: [0.0, 0.01, 0.1]}

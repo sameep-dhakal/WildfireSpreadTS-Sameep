@@ -72,6 +72,11 @@ import torchvision
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, Dataset
 
+try:
+    import wandb  # type: ignore
+except Exception:
+    wandb = None
+
 
 # -------------------------------
 # GRL
@@ -107,6 +112,25 @@ def norm_name(s: str) -> str:
 
 def ensure_dir(p: str):
     os.makedirs(p, exist_ok=True)
+
+
+def maybe_init_wandb(args):
+    """
+    Start a wandb run if the package is available and not disabled.
+    """
+    if os.environ.get("WANDB_DISABLED") == "1":
+        return None
+    if wandb is None:
+        print("[INFO] wandb not available; skipping wandb logging.")
+        return None
+    project = os.environ.get("WANDB_PROJECT", "office31-partial-da-iwan")
+    run = wandb.init(
+        project=project,
+        config=vars(args),
+        name=f"{args.source}->{args.target}_ew{args.entropy_weight}",
+        settings=wandb.Settings(start_method="thread"),
+    )
+    return run
 
 
 def lambda_schedule(progress: float, lambda_upper: float, alpha: float, device: torch.device) -> float:
@@ -377,7 +401,9 @@ def make_loaders_office31(
     tgt_train_list = os.path.join(list_root, f"{target}_train.txt")
     tgt_test_list  = os.path.join(list_root, f"{target}_test.txt")
 
-    # Filter target lists to shared IDs (PDA target label space)
+    # Filter target TRAIN/TEST to shared IDs.
+    # PDA benchmark assumes target label space is a subset (Office-10), so target data
+    # should only contain the shared classes.
     filt_root = os.path.join(list_root, "filtered_shared")
     tgt_train_f = os.path.join(filt_root, f"{target}_train_shared{shared_k}.txt")
     tgt_test_f  = os.path.join(filt_root, f"{target}_test_shared{shared_k}.txt")
@@ -566,6 +592,7 @@ def train_source(
     epochs: int,
     lr: float,
     patience: int,
+    wandb_run=None,
 ):
     model.to(device)
     opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
@@ -595,6 +622,11 @@ def train_source(
             bad += 1
 
         print(f"[CLS] ep {ep+1}/{epochs} src_test_ce={te_loss:.4f} best={best:.4f}")
+        if wandb_run is not None:
+            wandb_run.log(
+                {"stage": "cls", "epoch_cls": ep + 1, "src_test_ce": te_loss, "src_best_ce": best},
+                step=ep + 1,
+            )
         if patience > 0 and bad >= patience:
             print("[CLS] early stop")
             break
@@ -617,6 +649,7 @@ def train_iwan(
     entropy_weight: float,
     patience: int,
     freeze_bn_flag: bool,
+    wandb_run=None,
 ):
     """
     Stage 2 IWAN:
@@ -772,6 +805,25 @@ def train_iwan(
             f"w_mean={last_stats.get('w_mean',0):.4f} w_std={last_stats.get('w_std',0):.4f} "
             f"w_min={last_stats.get('w_min',0):.4f} w_max={last_stats.get('w_max',0):.4f}"
         )
+        if wandb_run is not None:
+            wandb_run.log(
+                {
+                    "stage": "da",
+                    "epoch_da": ep + 1,
+                    "src_test_ce": src_ce,
+                    "loss_D": last_stats.get("loss_D", 0.0),
+                    "loss_adv": last_stats.get("loss_adv", 0.0),
+                    "loss_cls": last_stats.get("loss_cls", 0.0),
+                    "loss_ent": last_stats.get("loss_ent", 0.0),
+                    "lambda": last_stats.get("lam", 0.0),
+                    "w_mean": last_stats.get("w_mean", 0.0),
+                    "w_std": last_stats.get("w_std", 0.0),
+                    "w_min": last_stats.get("w_min", 0.0),
+                    "w_max": last_stats.get("w_max", 0.0),
+                    "entropy_weight": entropy_weight,
+                },
+                step=ep + 1,
+            )
 
         if src_ce < best:
             best = src_ce
@@ -841,8 +893,13 @@ def parse_args():
 
 def main():
     args = parse_args()
+    wandb_run = maybe_init_wandb(args)
     if args.source == args.target:
-        raise ValueError("source and target must be different domains.")
+        print("[SKIP] source and target are the same; skipping run.")
+        if wandb_run is not None:
+            wandb_run.log({"skipped_same_domain": 1})
+            wandb_run.finish()
+        return
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
@@ -882,11 +939,20 @@ def main():
         epochs=args.epochs_cls,
         lr=args.lr_cls,
         patience=args.patience_cls,
+        wandb_run=wandb_run,
     )
 
     src_test_acc = eval_acc(model, data.src_test, device)
     tgt_test_acc_pre = eval_acc(model, data.tgt_test, device)
     print(f"[After CLS] src_test_acc={src_test_acc:.4f}  tgt_test_acc(shared only)={tgt_test_acc_pre:.4f}")
+    if wandb_run is not None:
+        wandb_run.log(
+            {
+                "src_test_acc_pre": src_test_acc,
+                "tgt_test_acc_pre": tgt_test_acc_pre,
+                "entropy_weight": args.entropy_weight,
+            }
+        )
 
     # ---------------- Stage 2: IWAN ----------------
     print("\n==> Stage 2: IWAN adaptation (unlabeled target train, report target TEST)")
@@ -903,6 +969,7 @@ def main():
         entropy_weight=args.entropy_weight,
         patience=args.patience_da,
         freeze_bn_flag=bool(args.freeze_bn),
+        wandb_run=wandb_run,
     )
 
     tgt_test_acc_post = eval_acc(model, data.tgt_test, device)
@@ -913,6 +980,16 @@ def main():
     print(f"Baseline (AlexNet+bottleneck) target TEST: {tgt_test_acc_pre*100:.2f}%")
     print(f"IWAN target TEST: {tgt_test_acc_post*100:.2f}%")
     print(f"Entropy weight (gamma): {args.entropy_weight}")
+    if wandb_run is not None:
+        wandb_run.log(
+            {
+                "tgt_test_acc_post": tgt_test_acc_post,
+                "baseline_tgt_test_pct": tgt_test_acc_pre * 100.0,
+                "iwan_tgt_test_pct": tgt_test_acc_post * 100.0,
+                "entropy_weight": args.entropy_weight,
+            }
+        )
+        wandb_run.finish()
 
 
 if __name__ == "__main__":
