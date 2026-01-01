@@ -556,8 +556,8 @@ def parse_args():
 
     # data
     p.add_argument("--data_root", type=str, required=True)
-    p.add_argument("--source", type=str, required=True, choices=["Art", "Clipart", "Product", "RealWorld"])
-    p.add_argument("--target", type=str, required=True, choices=["Art", "Clipart", "Product", "RealWorld"])
+    p.add_argument("--source", type=str, required=True, choices=["Art", "Clipart", "Product", "Real World"])
+    p.add_argument("--target", type=str, required=True, choices=["Art", "Clipart", "Product", "Real World"])
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--num_workers", type=int, default=4)
     p.add_argument("--val_split", type=float, default=0.1)
