@@ -12,7 +12,7 @@ metric:
   goal: maximize
 
 parameters:
-  data_root: {value: /path/to/Office31}
+  data_root: {value: /develop/data/office-31}
   arch: {value: alexnet}
   bottleneck_dim: {value: 256}
   batch_size: {value: 64}
