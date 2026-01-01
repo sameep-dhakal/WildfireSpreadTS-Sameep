@@ -1,43 +1,40 @@
-project: officehomedataset-domainadaptation
+project: office31-partial-da-iwan
 program: src/models/DomainAdpatation/train_iwan_officehome.py
 command:
   - ${env}
   - python3
   - ${program}
   - ${args}
+
 method: grid
 metric:
-  name: tgt_acc_post
+  name: tgt_acc_post_da
   goal: maximize
-parameters:
-  data_root: {value: /develop/data/OfficeHomeDataset}
-  source: {value: Product}
-  target: {value: "Real World"}
 
+parameters:
+  data_root: {value: /path/to/Office31}
+  arch: {value: alexnet}
+  bottleneck_dim: {value: 256}
   batch_size: {value: 64}
   num_workers: {value: 4}
-  val_split: {value: 0.1}
 
-  partial_k: {value: 25}
-  partial_seed: {value: 0}
-  split_seed: {value: 42}
-
-  arch: {value: resnet50}
-  bottleneck_dim: {value: 256}
-  freeze_bn: {value: 1}
-
+  # training
   epochs_cls: {value: 200}
-  lr_cls: {values: [0.001]}
-  patience_cls: {value: 20}
-
   epochs_da: {value: 250}
-  lr_da: {values: [0.001]}
+  lr_cls: {value: 0.001}
+  lr_da: {value: 0.001}
+  patience_cls: {value: 20}
   patience_da: {value: 0}
 
+  # IWAN / proposed terms
   lambda_upper: {value: 0.1}
   alpha: {value: 1.0}
-  entropy_weight: {values: [0.0, 0.01, 0.05, 0.1]}
+  entropy_weight: {values: [0.0, 0.01, 0.1]}  # γ=0 and "proposed"
 
+  # IMPORTANT: force the fixed Office-Caltech-10 list (not random K)
+  partial_mode: {value: office_caltech_10}
+  split_seed: {value: 42}
 
-
-
+  # you will sweep the 6 directions by changing these
+  source: {values: [Amazon, DSLR, Webcam]}
+  target: {values: [Amazon, DSLR, Webcam]}
