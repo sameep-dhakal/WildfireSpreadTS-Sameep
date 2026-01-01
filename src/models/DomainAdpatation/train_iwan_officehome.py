@@ -71,6 +71,10 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, Dataset
+from PIL import ImageFile
+
+# Allow PIL to load truncated images rather than crashing a worker
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 try:
     import wandb  # type: ignore
@@ -197,7 +201,13 @@ class OfficeListDataset(Dataset):
 
     def __getitem__(self, idx):
         path, y = self.items[idx]
-        x = self.loader(path)
+        try:
+            x = self.loader(path)
+        except OSError as e:
+            # Skip corrupted/truncated images gracefully
+            print(f"[WARN] Skipping corrupted image: {path} ({e})")
+            # Simple fallback: return a zero tensor with correct shape; label stays y
+            x = torch.zeros(3, 224, 224)
         if self.transform is not None:
             x = self.transform(x)
         return x, y
