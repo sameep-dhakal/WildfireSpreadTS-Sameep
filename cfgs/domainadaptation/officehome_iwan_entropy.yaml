@@ -22,14 +22,14 @@ parameters:
 
   partial_mode: {value: office_caltech_10}
 
-  epochs_cls: {value: 50}
+  epochs_cls: {value: 200}
   lr_cls: {values: [0.0005]}
 
   epochs_da: {value: 50}
-  lr_da: {values: [0.0005]}
+  lr_da: {values: [0.001]}
 
   lambda_upper: {value: 0.1}
   alpha: {values: [10.0]}
   entropy_weight: {values: [0.0]}
 
-  src_val_ratio: {value: 0.1}
+  src_val_ratio: {value: 0.0}
