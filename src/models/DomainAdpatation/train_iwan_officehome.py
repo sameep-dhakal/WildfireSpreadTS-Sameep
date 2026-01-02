@@ -34,7 +34,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from PIL import Image, UnidentifiedImageError
 
 
@@ -189,17 +189,11 @@ class Office31Domain(Dataset):
         return x, y
 
 
-class FilterByClassIDs(Dataset):
+class FilterByClassIDs(Subset):
     def __init__(self, base: Office31Domain, keep_ids: List[int]):
-        self.base = base
         keep = set(int(k) for k in keep_ids)
-        self.indices = [i for i, (_, y) in enumerate(base.samples) if int(y) in keep]
-
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, idx):
-        return self.base[self.indices[idx]]
+        indices = [i for i, (_, y) in enumerate(base.samples) if int(y) in keep]
+        super().__init__(base, indices)
 
 
 def get_shared10_list(mode: str) -> List[str]:
@@ -360,7 +354,9 @@ def lambda_schedule(progress: float, lambda_upper: float, alpha: float, device: 
 def build_optimizer_and_sched(params, lr: float, steps_total: int):
     opt = torch.optim.SGD(params, lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
     # this helps small Office31 stabilize; many baselines use step decay, cosine also works well
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, steps_total))
+    if steps_total <= 0:
+        steps_total = 1
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps_total)
     return opt, sched
 
 
@@ -659,6 +655,9 @@ def main():
     if args.source == args.target:
         raise ValueError("source and target must be different (A→W, D→W, etc).")
 
+    # wandb init (safe even if WANDB_DISABLED=1)
+    wandb_run = maybe_init_wandb(args)
+
     set_seed(args.seed)
     torch.backends.cudnn.benchmark = True
 
@@ -700,6 +699,7 @@ def main():
         device=device,
         epochs=args.epochs_cls,
         lr=args.lr_cls,
+        wandb_run=wandb_run,
     )
 
     tgt_acc_pre = eval_acc(model, tgt_test, device)
@@ -718,6 +718,7 @@ def main():
         lambda_upper=args.lambda_upper,
         alpha=args.alpha,
         entropy_weight=args.entropy_weight,
+        wandb_run=wandb_run,
     )
 
     tgt_acc_post = eval_acc(model, tgt_test, device)
@@ -727,6 +728,16 @@ def main():
     print("- Baseline line corresponds to 'AlexNet+bottleneck'")
     print("- IWAN with entropy_weight=0.0 corresponds to 'proposed (γ=0)'")
     print("- IWAN with entropy_weight>0 corresponds to 'proposed' (with target entropy minimization)")
+
+    if wandb_run is not None:
+        wandb_run.log(
+            {
+                "src_val_ce_best": getattr(model, "src_best_ce", None),
+                "tgt_test_acc_pre": tgt_acc_pre,
+                "tgt_test_acc_post": tgt_acc_post,
+            }
+        )
+        wandb_run.finish()
 
 
 if __name__ == "__main__":
