@@ -296,28 +296,33 @@ def make_loaders_optionA(
     tgt_train_ds = FilterByClassIDs(tgt_train_full, keep_ids)
     tgt_test_ds  = FilterByClassIDs(tgt_test_full, keep_ids)
 
-    # Split source into train/val for monitoring
+    # Split source into train/val for monitoring; allow ratio=0 to use all source for train
     n_src = len(src_ds_train_tf)
-    n_val = int(round(n_src * src_val_ratio))
-    n_val = min(max(n_val, 1), n_src - 1)  # keep both splits non-empty
-    n_train = n_src - n_val
-    g = torch.Generator()
-    g.manual_seed(split_seed)
-    indices = torch.randperm(n_src, generator=g).tolist()
-    train_idx = indices[:n_train]
-    val_idx = indices[n_train:]
-
-    src_train_ds = SubDataset(src_ds_train_tf, train_idx)
-    src_val_ds   = SubDataset(src_ds_val_tf, val_idx)
+    if src_val_ratio <= 0:
+        src_train_ds = src_ds_train_tf
+        src_val_ds   = None
+    else:
+        n_val = int(round(n_src * src_val_ratio))
+        n_val = min(max(n_val, 1), n_src - 1)  # keep both splits non-empty
+        n_train = n_src - n_val
+        g = torch.Generator()
+        g.manual_seed(split_seed)
+        indices = torch.randperm(n_src, generator=g).tolist()
+        train_idx = indices[:n_train]
+        val_idx = indices[n_train:]
+        src_train_ds = SubDataset(src_ds_train_tf, train_idx)
+        src_val_ds   = SubDataset(src_ds_val_tf, val_idx)
 
     src_train = DataLoader(
         src_train_ds, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, drop_last=True, pin_memory=True
     )
-    src_val = DataLoader(
-        src_val_ds, batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, drop_last=False, pin_memory=True
-    )
+    src_val = None
+    if src_val_ds is not None:
+        src_val = DataLoader(
+            src_val_ds, batch_size=batch_size, shuffle=False,
+            num_workers=num_workers, drop_last=False, pin_memory=True
+        )
     tgt_train = DataLoader(
         tgt_train_ds, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, drop_last=True, pin_memory=True
@@ -388,8 +393,9 @@ def train_source(
     device: torch.device,
     epochs: int,
     lr: float,
-    src_val: DataLoader,
+    src_val: DataLoader = None,
     wandb_run=None,
+    patience: int = 0,
 ) -> IWANClassifier:
     model.to(device)
     ce = nn.CrossEntropyLoss()
@@ -399,6 +405,7 @@ def train_source(
 
     best = float("inf")
     best_state = None
+    bad = 0
 
     for ep in range(epochs):
         model.train()
@@ -419,32 +426,37 @@ def train_source(
             n += y.size(0)
 
         train_ce = running / max(1, n)
-        # validation on source val/test split
-        val_ce = eval_ce(model, src_val, device)
-        is_best = val_ce < best
-        if is_best:
-            best = val_ce
-            best_state = deepcopy(model.state_dict())
+        val_ce = None
+        if src_val is not None:
+            val_ce = eval_ce(model, src_val, device)
+            if val_ce < best:
+                best = val_ce
+                best_state = deepcopy(model.state_dict())
+                bad = 0
+            else:
+                bad += 1
 
-        print(
-            f"[CLS] ep {ep+1:03d}/{epochs} "
-            f"src_train_ce={train_ce:.4f} src_val_ce={val_ce:.4f} "
-            f"best={best:.4f} lr={sched.get_last_lr()[0]:.6f}"
-        )
+        print_str = f"[CLS] ep {ep+1:03d}/{epochs} src_train_ce={train_ce:.4f} lr={sched.get_last_lr()[0]:.6f}"
+        if val_ce is not None:
+            print_str += f" src_val_ce={val_ce:.4f} best={best:.4f}"
+        print(print_str)
+
         if wandb_run is not None:
-            wandb_run.log(
-                {
-                    "stage": "cls",
-                    "epoch_cls": ep + 1,
-                    "src_train_ce": train_ce,
-                    "src_val_ce": val_ce,
-                    "src_best_ce": best,
-                    "lr_cls": sched.get_last_lr()[0],
-                },
-                step=ep + 1,
-            )
+            log = {
+                "stage": "cls",
+                "epoch_cls": ep + 1,
+                "src_train_ce": train_ce,
+                "lr_cls": sched.get_last_lr()[0],
+            }
+            if val_ce is not None:
+                log.update({"src_val_ce": val_ce, "src_best_ce": best})
+            wandb_run.log(log, step=ep + 1)
 
-    if best_state is not None:
+        if patience > 0 and src_val is not None and bad >= patience:
+            print("[CLS] early stop on source val")
+            break
+
+    if best_state is not None and src_val is not None:
         model.load_state_dict(best_state)
     return model
 
@@ -619,22 +631,27 @@ def train_iwan(
                 "lr_main": float(sched_main.get_last_lr()[0]),
             }
 
-        # monitor on source val
-        src_ce = eval_ce(model, src_val, device)
-        print(
+        # monitor on source val if provided
+        src_ce = None
+        if src_val is not None:
+            src_ce = eval_ce(model, src_val, device)
+            if src_ce < best:
+                best = src_ce
+                best_state = deepcopy(model.state_dict())
+
+        msg = (
             f"[DA] ep {ep+1:03d}/{epochs} "
             f"D={last['loss_D']:.4f} adv={last['loss_adv']:.4f} cls={last['loss_cls']:.4f} "
             f"ent={last['loss_ent']:.4f} lam={last['lam']:.4f} "
             f"w_mean={last['w_mean']:.4f} w_std={last['w_std']:.4f} "
             f"w_min={last['w_min']:.4f} w_max={last['w_max']:.4f} "
-            f"lr={last['lr_main']:.6f} src_val_ce={src_ce:.4f}"
+            f"lr={last['lr_main']:.6f}"
         )
+        if src_ce is not None:
+            msg += f" src_val_ce={src_ce:.4f}"
+        print(msg)
 
-        if src_ce < best:
-            best = src_ce
-            best_state = deepcopy(model.state_dict())
-
-    if best_state is not None:
+    if best_state is not None and src_val is not None:
         model.load_state_dict(best_state)
     return model
 
@@ -669,6 +686,7 @@ def parse_args():
     p.add_argument("--entropy_weight", type=float, default=0.0)
 
     p.add_argument("--no_pretrained", action="store_true")
+    p.add_argument("--patience_cls", type=int, default=0, help="Early stop on source val CE (0 disables).")
 
     return p.parse_args()
 
@@ -703,7 +721,8 @@ def main():
     print(f"Target domain: {args.target} (train unlabeled + test on shared-10 only)")
     print("Shared-10 classes:", shared_names)
     print(f"Source train images: {len(src_train.dataset)}")
-    print(f"Source val images: {len(src_val.dataset)}")
+    src_val_len = 0 if src_val is None else len(src_val.dataset)
+    print(f"Source val images: {src_val_len}")
     print(f"Target train images (shared-10 only): {len(tgt_train.dataset)}")
     print(f"Target test images  (shared-10): {len(tgt_test.dataset)}\n")
 
