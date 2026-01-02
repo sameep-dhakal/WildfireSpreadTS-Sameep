@@ -37,6 +37,11 @@ import torchvision.transforms as T
 from torch.utils.data import DataLoader, Dataset, Subset
 from PIL import Image, UnidentifiedImageError
 
+try:
+    import wandb  # type: ignore
+except Exception:
+    wandb = None
+
 
 
 # -------------------------------
@@ -47,6 +52,16 @@ def set_seed(seed: int):
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def maybe_init_wandb(args):
+    """Initialize wandb if available and not disabled."""
+    if os.environ.get("WANDB_DISABLED") == "1":
+        return None
+    if wandb is None:
+        return None
+    project = os.environ.get("WANDB_PROJECT", "office31-partial-da-iwan")
+    return wandb.init(project=project, config=vars(args), settings=wandb.Settings(start_method="thread"))
 
 
 # -------------------------------
@@ -193,6 +208,12 @@ class FilterByClassIDs(Subset):
     def __init__(self, base: Office31Domain, keep_ids: List[int]):
         keep = set(int(k) for k in keep_ids)
         indices = [i for i, (_, y) in enumerate(base.samples) if int(y) in keep]
+        super().__init__(base, indices)
+
+
+class SubDataset(Subset):
+    """Thin wrapper around torch.utils.data.Subset for clarity."""
+    def __init__(self, base: Dataset, indices: List[int]):
         super().__init__(base, indices)
 
 
