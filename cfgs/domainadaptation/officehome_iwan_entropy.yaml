@@ -22,10 +22,10 @@ parameters:
 
   partial_mode: {value: office_caltech_10}
 
-  epochs_cls: {value: 200}
+  epochs_cls: {value: 50}
   lr_cls: {values: [0.0005]}
 
-  epochs_da: {value: 25}
+  epochs_da: {value: 50}
   lr_da: {values: [0.0001]}
 
   lambda_upper: {value: 0.1}
