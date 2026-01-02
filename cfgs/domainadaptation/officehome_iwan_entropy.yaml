@@ -13,8 +13,8 @@ metric:
 
 parameters:
   data_root: {value: /develop/data/Office-31}
-  source: {values: [amazon]}
-  target: {values: [webcam]}
+  source: {values: [amazon, webcam, dslr]}
+  target: {values: [dslr, webcam, amazon]}
 
   batch_size: {value: 64}
   num_workers: {value: 4}
@@ -22,10 +22,10 @@ parameters:
 
   partial_mode: {value: office_caltech_10}
 
-  epochs_cls: {value: 200}
-  lr_cls: {values: [0.001]}
+  epochs_cls: {value: 60}
+  lr_cls: {values: [0.0005]}
 
-  epochs_da: {value: 250}
+  epochs_da: {value: 80}
   lr_da: {values: [0.0005]}
 
   lambda_upper: {value: 0.1}
