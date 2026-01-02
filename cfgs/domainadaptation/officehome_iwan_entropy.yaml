@@ -29,8 +29,8 @@ parameters:
 
   epochs_cls: {value: 200}
   epochs_da: {value: 25}
-  lr_cls: {value: 0.001}
-  lr_da: {value: 0.001}
+  lr_cls: {value: 0.0001}
+  lr_da: {values: [0.0001, 0.001]}
 
   patience_cls: {value: 0}
   patience_da: {value: 0}
