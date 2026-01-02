@@ -26,7 +26,7 @@ parameters:
   lr_cls: {values: [0.0005]}
 
   epochs_da: {value: 50}
-  lr_da: {values: [0.0001]}
+  lr_da: {values: [0.0005]}
 
   lambda_upper: {value: 0.1}
   alpha: {values: [10.0]}
