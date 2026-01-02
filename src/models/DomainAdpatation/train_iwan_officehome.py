@@ -274,7 +274,8 @@ def make_loaders_optionA(
     tgt_train_full = Office31Domain(tgt_root, source_class_to_idx, transform=train_tf)
     tgt_test_full  = Office31Domain(tgt_root, source_class_to_idx, transform=test_tf)
 
-    tgt_train_ds = FilterByClassIDs(tgt_train_full, keep_ids)
+    # Keep FULL target train (includes outlier classes) for true PDA; evaluate on shared classes only.
+    tgt_train_ds = tgt_train_full
     tgt_test_ds  = FilterByClassIDs(tgt_test_full, keep_ids)
 
     src_train = DataLoader(
@@ -348,12 +349,17 @@ def train_source(
     device: torch.device,
     epochs: int,
     lr: float,
+    src_val: DataLoader,
+    wandb_run=None,
 ) -> IWANClassifier:
     model.to(device)
     ce = nn.CrossEntropyLoss()
 
     steps_total = epochs * len(src_train)
     opt, sched = build_optimizer_and_sched(model.parameters(), lr=lr, steps_total=steps_total)
+
+    best = float("inf")
+    best_state = None
 
     for ep in range(epochs):
         model.train()
@@ -373,8 +379,34 @@ def train_source(
             running += loss.item() * y.size(0)
             n += y.size(0)
 
-        print(f"[CLS] ep {ep+1:03d}/{epochs} src_train_ce={running/max(1,n):.4f} lr={sched.get_last_lr()[0]:.6f}")
+        train_ce = running / max(1, n)
+        # validation on source val/test split
+        val_ce = eval_ce(model, src_val, device)
+        is_best = val_ce < best
+        if is_best:
+            best = val_ce
+            best_state = deepcopy(model.state_dict())
 
+        print(
+            f"[CLS] ep {ep+1:03d}/{epochs} "
+            f"src_train_ce={train_ce:.4f} src_val_ce={val_ce:.4f} "
+            f"best={best:.4f} lr={sched.get_last_lr()[0]:.6f}"
+        )
+        if wandb_run is not None:
+            wandb_run.log(
+                {
+                    "stage": "cls",
+                    "epoch_cls": ep + 1,
+                    "src_train_ce": train_ce,
+                    "src_val_ce": val_ce,
+                    "src_best_ce": best,
+                    "lr_cls": sched.get_last_lr()[0],
+                },
+                step=ep + 1,
+            )
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
     return model
 
 
