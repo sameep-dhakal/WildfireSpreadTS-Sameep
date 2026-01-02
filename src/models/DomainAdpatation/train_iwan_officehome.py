@@ -2,41 +2,31 @@
 """
 IWAN on Office-31 (Office-Caltech-10 shared classes) with AlexNet+bottleneck.
 
-This script follows the *standard DA protocol (Option A)* used for tables like:
-A31→W10, D31→W10, W31→D10, A31→D10, D31→A10, W31→A10
-
-Protocol:
+Goal: replicate table-style protocol (Option A, standard in DA papers)
 - Source train (labeled): ALL source images, ALL 31 classes
-- Target train (unlabeled): ALL target images, BUT FILTERED to the fixed 10 shared classes
-- Target test (evaluation only): ALL target images, same 10 shared classes (labels used only for reporting)
+- Target train (unlabeled): ALL target images, FILTERED to fixed shared-10 classes
+- Target test (evaluation only): ALL target images, same shared-10 classes (labels used ONLY for reporting)
 
-You can reproduce:
-- "AlexNet+bottleneck" = Stage 1 only (no adaptation)
-- "proposed (γ=0)"      = IWAN with entropy_weight=0.0
-- "proposed"            = IWAN with entropy_weight>0 (target entropy minimization)
+Key FIXES vs your current script:
+1) ✅ D0 adversarial loss MUST update Ft using BOTH source and target Ft-features.
+   - We compute weights w from frozen Fs(xs).
+   - But D0 sees Ft(xs) and Ft(xt) (with GRL), so Ft actually learns alignment.
+2) ✅ Proper AlexNet crop size: 227 (common in Office31 AlexNet baselines).
+3) ✅ Reasonable training: SGD+momentum, LR scheduler (helps match reported numbers).
+4) ✅ Logging shows baseline target acc (shared-10) and post-IWAN target acc (shared-10).
 
-Dataset layout expected:
+Dataset layout:
 DATA_ROOT/
   amazon/<class_name>/*.jpg
   dslr/<class_name>/*.jpg
   webcam/<class_name>/*.jpg
-Class folder names should match the Office-31 naming (underscore style).
-
-Example:
-python3 train_iwan_office31.py \
-  --data_root /develop/data/Office-31 \
-  --source amazon --target webcam \
-  --arch alexnet --bottleneck_dim 256 \
-  --epochs_cls 200 --epochs_da 250 \
-  --lr_cls 0.001 --lr_da 0.001 \
-  --lambda_upper 0.1 --alpha 1.0 \
-  --entropy_weight 0.0
 """
 
 import argparse
 import os
+import random
 from copy import deepcopy
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -45,6 +35,16 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, Dataset
+
+
+# -------------------------------
+# Utils
+# -------------------------------
+def set_seed(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 # -------------------------------
@@ -66,20 +66,18 @@ def grad_reverse(x, lambd: float):
 
 
 # -------------------------------
-# AlexNet backbone (feature extractor)
+# AlexNet feature extractor
 # -------------------------------
 class AlexNetFeat(nn.Module):
-    """
-    Returns a 4096-d feature (fc7 output) from ImageNet pretrained AlexNet.
-    """
+    """Returns a 4096-d feature (fc7 output) from ImageNet pretrained AlexNet."""
     def __init__(self, pretrained: bool = True):
         super().__init__()
         weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1 if pretrained else None
         net = torchvision.models.alexnet(weights=weights)
         self.features = net.features
         self.avgpool = net.avgpool
-        # classifier = [Dropout, Linear(9216->4096), ReLU, Dropout, Linear(4096->4096), ReLU, Linear(4096->1000)]
-        self.classifier_prefix = nn.Sequential(*list(net.classifier.children())[:6])  # up to fc7 ReLU
+        # up to fc7 relu (Dropout, fc6, relu, Dropout, fc7, relu)
+        self.classifier_prefix = nn.Sequential(*list(net.classifier.children())[:6])
         self.out_dim = 4096
 
     def forward(self, x):
@@ -91,16 +89,13 @@ class AlexNetFeat(nn.Module):
 
 
 class IWANClassifier(nn.Module):
-    """
-    AlexNet feature -> bottleneck -> classifier (31-way).
-    """
+    """AlexNet feature -> bottleneck -> classifier (31-way)."""
     def __init__(self, num_classes: int, bottleneck_dim: int = 256, pretrained: bool = True):
         super().__init__()
         self.backbone = AlexNetFeat(pretrained=pretrained)
         in_dim = self.backbone.out_dim
 
-        self.use_bottleneck = bottleneck_dim is not None and bottleneck_dim > 0
-        if self.use_bottleneck:
+        if bottleneck_dim is not None and bottleneck_dim > 0:
             self.bottleneck = nn.Sequential(
                 nn.Linear(in_dim, bottleneck_dim),
                 nn.ReLU(inplace=True),
@@ -127,9 +122,7 @@ class IWANClassifier(nn.Module):
 
 
 class DomainDiscriminator(nn.Module):
-    """
-    MLP discriminator: in -> 1024 -> 1024 -> 1
-    """
+    """MLP discriminator: in -> 1024 -> 1024 -> 1"""
     def __init__(self, in_dim: int, hidden: int = 1024):
         super().__init__()
         self.net = nn.Sequential(
@@ -145,24 +138,24 @@ class DomainDiscriminator(nn.Module):
 
 
 # -------------------------------
-# Data: Office31 with canonical label mapping from source domain
+# Data
 # -------------------------------
 class Office31Domain(Dataset):
     """
-    ImageFolder wrapper with label IDs forced to SOURCE domain's class_to_idx
-    so labels are consistent across domains.
+    ImageFolder wrapper with labels forced to SOURCE domain class_to_idx
+    so IDs are consistent across domains.
     """
     def __init__(self, domain_root: str, source_class_to_idx: Dict[str, int], transform):
-        self.inner = torchvision.datasets.ImageFolder(domain_root, transform=transform)
+        inner = torchvision.datasets.ImageFolder(domain_root, transform=transform)
         self.source_class_to_idx = source_class_to_idx
 
         self.samples: List[Tuple[str, int]] = []
-        for path, y_inner in self.inner.samples:
-            cls_name = self.inner.classes[y_inner]
+        for path, y_inner in inner.samples:
+            cls_name = inner.classes[y_inner]
             if cls_name in source_class_to_idx:
                 self.samples.append((path, source_class_to_idx[cls_name]))
 
-        self.loader = self.inner.loader
+        self.loader = inner.loader
         self.transform = transform
 
     def __len__(self):
@@ -190,13 +183,9 @@ class FilterByClassIDs(Dataset):
 
 
 def get_shared10_list(mode: str) -> List[str]:
-    """
-    Fixed Office-Caltech-10 shared classes.
-    These names match the common folder naming used in Office-31 / Office-Caltech splits.
-    """
+    """Fixed Office-Caltech-10 shared classes (folder names)."""
     if mode != "office_caltech_10":
         raise ValueError(f"Unknown partial_mode: {mode}")
-
     return [
         "back_pack",
         "bike",
@@ -219,54 +208,47 @@ def make_loaders_optionA(
     num_workers: int,
     partial_mode: str,
 ) -> Tuple[DataLoader, DataLoader, DataLoader, int, List[str]]:
-    """
-    Option A:
-    - src_train = all source (31 classes)
-    - tgt_train = all target filtered to shared-10 (unlabeled in training)
-    - tgt_test  = all target filtered to shared-10 (for evaluation only)
-    """
+
     normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
+    # AlexNet-friendly crops (common in Office31 AlexNet baselines)
     train_tf = T.Compose([
         T.Resize(256),
-        T.RandomResizedCrop(224),
+        T.RandomCrop(227),
         T.RandomHorizontalFlip(),
         T.ToTensor(),
         normalize,
     ])
     test_tf = T.Compose([
         T.Resize(256),
-        T.CenterCrop(224),
+        T.CenterCrop(227),
         T.ToTensor(),
         normalize,
     ])
 
     src_root = os.path.join(data_root, source)
     tgt_root = os.path.join(data_root, target)
-
     if not os.path.isdir(src_root):
         raise FileNotFoundError(f"Missing source domain folder: {src_root}")
     if not os.path.isdir(tgt_root):
         raise FileNotFoundError(f"Missing target domain folder: {tgt_root}")
 
-    # Canonical mapping from source domain folder names
+    # canonical class mapping from source folder names
     src_probe = torchvision.datasets.ImageFolder(src_root, transform=train_tf)
     source_class_to_idx = src_probe.class_to_idx
     num_classes = len(src_probe.classes)
 
-    # Full source
+    # full source (31 classes)
     src_ds = Office31Domain(src_root, source_class_to_idx, transform=train_tf)
 
-    # Target filtered to shared-10
+    # shared-10 filtering on target
     shared_names = get_shared10_list(partial_mode)
     missing = [c for c in shared_names if c not in source_class_to_idx]
     if missing:
         raise ValueError(
-            "Your source domain does not contain some shared-10 classes. "
-            f"Missing in source mapping: {missing}\n"
-            "This usually means your folder names differ from expected."
+            f"These shared-10 class folder names are missing in SOURCE '{source}': {missing}\n"
+            "Fix by renaming folders OR updating get_shared10_list() to match your dataset naming."
         )
-
     keep_ids = [source_class_to_idx[c] for c in shared_names]
 
     tgt_train_full = Office31Domain(tgt_root, source_class_to_idx, transform=train_tf)
@@ -297,8 +279,7 @@ def make_loaders_optionA(
 @torch.no_grad()
 def eval_acc(model: IWANClassifier, loader: DataLoader, device: torch.device) -> float:
     model.eval()
-    correct = 0
-    total = 0
+    correct, total = 0, 0
     for x, y in loader:
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
@@ -313,8 +294,7 @@ def eval_acc(model: IWANClassifier, loader: DataLoader, device: torch.device) ->
 def eval_ce(model: IWANClassifier, loader: DataLoader, device: torch.device) -> float:
     model.eval()
     ce = nn.CrossEntropyLoss()
-    total_loss = 0.0
-    total = 0
+    total_loss, total = 0.0, 0
     for x, y in loader:
         x = x.to(device, non_blocking=True)
         y = y.to(device, non_blocking=True)
@@ -335,6 +315,13 @@ def lambda_schedule(progress: float, lambda_upper: float, alpha: float, device: 
     return float(val.item())
 
 
+def build_optimizer_and_sched(params, lr: float, steps_total: int):
+    opt = torch.optim.SGD(params, lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
+    # this helps small Office31 stabilize; many baselines use step decay, cosine also works well
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=max(1, steps_total))
+    return opt, sched
+
+
 def train_source(
     model: IWANClassifier,
     src_train: DataLoader,
@@ -343,15 +330,14 @@ def train_source(
     lr: float,
 ) -> IWANClassifier:
     model.to(device)
-    model.train()
-
-    opt = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4, nesterov=True)
     ce = nn.CrossEntropyLoss()
+
+    steps_total = epochs * len(src_train)
+    opt, sched = build_optimizer_and_sched(model.parameters(), lr=lr, steps_total=steps_total)
 
     for ep in range(epochs):
         model.train()
-        running = 0.0
-        n = 0
+        running, n = 0.0, 0
         for x, y in src_train:
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
@@ -359,14 +345,15 @@ def train_source(
             logits, _ = model(x)
             loss = ce(logits, y)
 
-            opt.zero_grad()
+            opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
+            sched.step()
 
             running += loss.item() * y.size(0)
             n += y.size(0)
 
-        print(f"[CLS] ep {ep+1:03d}/{epochs} src_train_ce={running/max(1,n):.4f}")
+        print(f"[CLS] ep {ep+1:03d}/{epochs} src_train_ce={running/max(1,n):.4f} lr={sched.get_last_lr()[0]:.6f}")
 
     return model
 
@@ -383,17 +370,17 @@ def train_iwan(
     entropy_weight: float,
 ):
     """
-    IWAN:
-    - Fs frozen copy of feature extractor (+ bottleneck)
-    - Ft = model backbone (+ bottleneck)
-    - C frozen classifier
-    - D  trains to discriminate Fs(xs) vs Ft(xt) and produces weights: w = 1 - sigmoid(D(Fs(xs)))
-    - D0 adversarial alignment between Fs(xs) and Ft(xt) with GRL + weighting on source
-    - Ft trained with: CE(source) + Adv(D0) + entropy_weight * Entropy(target)
+    IWAN (fixed):
+    - Fs = frozen copy of Ft at start of DA stage (backbone + bottleneck)
+    - C  = frozen classifier
+    - D  = domain disc for importance weights using Fs(xs) vs Ft(xt)
+    - D0 = adversarial alignment disc using Ft(xs) vs Ft(xt) with GRL
+          source term is weighted by w computed from Fs(xs)
+    - Ft updated by: CE(source) + Adv(D0) + entropy_weight * Entropy(target)
     """
     model.to(device)
 
-    # Frozen Fs
+    # ----- Frozen Fs (copy of current Ft at start of DA stage)
     Fs_backbone = deepcopy(model.backbone).to(device).eval()
     for p in Fs_backbone.parameters():
         p.requires_grad_(False)
@@ -404,31 +391,30 @@ def train_iwan(
         for p in Fs_bottleneck.parameters():
             p.requires_grad_(False)
 
-    # Ft and C
+    # ----- Ft (trainable) + frozen classifier
     Ft_backbone = model.backbone
     Ft_bottleneck = model.bottleneck
     C = model.classifier
     for p in C.parameters():
         p.requires_grad_(False)
 
+    # ----- Discriminators
     feat_dim = model.feat_dim
     D = DomainDiscriminator(in_dim=feat_dim).to(device)
     D0 = DomainDiscriminator(in_dim=feat_dim).to(device)
 
-    opt_D = torch.optim.SGD(D.parameters(), lr=lr, momentum=0.9, weight_decay=5e-4)
-    opt_main = torch.optim.SGD(
-        list(Ft_backbone.parameters())
-        + ([] if Ft_bottleneck is None else list(Ft_bottleneck.parameters()))
-        + list(D0.parameters()),
-        lr=lr, momentum=0.9, weight_decay=5e-4
-    )
-
-    ce = nn.CrossEntropyLoss()
     bce = nn.BCEWithLogitsLoss(reduction="none")
+    ce = nn.CrossEntropyLoss()
 
     steps_per_epoch = min(len(src_train), len(tgt_train))
-    global_step = 0
     total_steps = max(1, epochs * steps_per_epoch)
+
+    opt_D, sched_D = build_optimizer_and_sched(D.parameters(), lr=lr, steps_total=total_steps)
+    # main updates Ft + D0
+    main_params = list(Ft_backbone.parameters()) + ([] if Ft_bottleneck is None else list(Ft_bottleneck.parameters())) + list(D0.parameters())
+    opt_main, sched_main = build_optimizer_and_sched(main_params, lr=lr, steps_total=total_steps)
+
+    global_step = 0
 
     for ep in range(epochs):
         model.train()
@@ -438,73 +424,89 @@ def train_iwan(
         it_s = iter(src_train)
         it_t = iter(tgt_train)
 
-        # just for logging the last batch values
         last = {}
 
         for _ in range(steps_per_epoch):
             x_s, y_s = next(it_s)
             x_t, _ = next(it_t)
+
             x_s = x_s.to(device, non_blocking=True)
             y_s = y_s.to(device, non_blocking=True)
             x_t = x_t.to(device, non_blocking=True)
 
-            # ---- Fs forward (no grad) on source
+            # ---- Fs source features (no grad)
             with torch.no_grad():
                 z_s_fs = Fs_backbone(x_s)
                 if Fs_bottleneck is not None:
                     z_s_fs = Fs_bottleneck(z_s_fs)
 
-            # ---- Ft forward on source+target
-            z_t_ft = Ft_backbone(x_t)
+            # ---- Ft features on source+target
             z_s_ft = Ft_backbone(x_s)
+            z_t_ft = Ft_backbone(x_t)
             if Ft_bottleneck is not None:
-                z_t_ft = Ft_bottleneck(z_t_ft)
                 z_s_ft = Ft_bottleneck(z_s_ft)
+                z_t_ft = Ft_bottleneck(z_t_ft)
 
             logits_s = C(z_s_ft)
             logits_t = C(z_t_ft)
 
-            # ---- (1) Train D: Fs(xs)=1, Ft(xt)=0
+            # ============================================================
+            # (1) Train D for importance weights
+            #     Label: Fs(xs)=1, Ft(xt)=0  (binary domain classification)
+            # ============================================================
             log_s_D = D(z_s_fs.detach())
             log_t_D = D(z_t_ft.detach())
+
             ones = torch.ones_like(log_s_D)
             zeros = torch.zeros_like(log_t_D)
 
             loss_D = 0.5 * (bce(log_s_D, ones).mean() + bce(log_t_D, zeros).mean())
-            opt_D.zero_grad()
+
+            opt_D.zero_grad(set_to_none=True)
             loss_D.backward()
             opt_D.step()
+            sched_D.step()
 
-            # ---- (2) weights from D(Fs(xs)) with stop-grad, normalize mean to 1
+            # ---- weights from D(Fs(xs)) stop-grad, normalize mean to 1
             with torch.no_grad():
-                w = 1.0 - torch.sigmoid(log_s_D)
+                w = 1.0 - torch.sigmoid(log_s_D)   # as in IWAN
                 w = w / (w.mean() + 1e-8)
 
-            # ---- (3) Adversarial with D0 + GRL
-            progress = min(1.0, global_step / total_steps)
+            # ============================================================
+            # (2) Train Ft + D0 (adversarial alignment)  ✅ FIXED
+            #     IMPORTANT:
+            #       D0 must see Ft(xs) AND Ft(xt) (with GRL),
+            #       otherwise Ft never aligns source features.
+            # ============================================================
+            progress = min(1.0, global_step / max(1, total_steps))
             lam = lambda_schedule(progress, lambda_upper=lambda_upper, alpha=alpha, device=device)
 
-            log_s_D0 = D0(z_s_fs.detach())              # Fs side
-            log_t_D0 = D0(grad_reverse(z_t_ft, lam))    # Ft side with GRL
+            # Apply GRL to BOTH domains (standard DANN-style)
+            log_s_D0 = D0(grad_reverse(z_s_ft, lam))
+            log_t_D0 = D0(grad_reverse(z_t_ft, lam))
 
-            loss_s_D0 = (w * bce(log_s_D0, ones)).mean()
-            loss_t_D0 = bce(log_t_D0, zeros).mean()
+            ones0 = torch.ones_like(log_s_D0)
+            zeros0 = torch.zeros_like(log_t_D0)
+
+            loss_s_D0 = (w * bce(log_s_D0, ones0)).mean()  # weighted source
+            loss_t_D0 = bce(log_t_D0, zeros0).mean()       # target
             loss_adv = 0.5 * (loss_s_D0 + loss_t_D0)
 
-            # ---- (4) Source CE anchor
+            # ---- source CE anchor
             loss_cls = ce(logits_s, y_s)
 
-            # ---- (5) Optional target entropy
+            # ---- optional target entropy
             loss_ent = torch.tensor(0.0, device=device)
             if entropy_weight > 0:
                 p_t = F.softmax(logits_t, dim=1)
                 loss_ent = -(p_t * torch.log(p_t + 1e-8)).sum(dim=1).mean()
 
-            # ---- (6) Main update
             loss_main = loss_cls + loss_adv + entropy_weight * loss_ent
-            opt_main.zero_grad()
+
+            opt_main.zero_grad(set_to_none=True)
             loss_main.backward()
             opt_main.step()
+            sched_main.step()
 
             global_step += 1
 
@@ -518,6 +520,7 @@ def train_iwan(
                 "w_std": float(w.std().item()),
                 "w_min": float(w.min().item()),
                 "w_max": float(w.max().item()),
+                "lr_main": float(sched_main.get_last_lr()[0]),
             }
 
         print(
@@ -525,7 +528,8 @@ def train_iwan(
             f"D={last['loss_D']:.4f} adv={last['loss_adv']:.4f} cls={last['loss_cls']:.4f} "
             f"ent={last['loss_ent']:.4f} lam={last['lam']:.4f} "
             f"w_mean={last['w_mean']:.4f} w_std={last['w_std']:.4f} "
-            f"w_min={last['w_min']:.4f} w_max={last['w_max']:.4f}"
+            f"w_min={last['w_min']:.4f} w_max={last['w_max']:.4f} "
+            f"lr={last['lr_main']:.6f}"
         )
 
     return model
@@ -538,18 +542,13 @@ def parse_args():
     p = argparse.ArgumentParser()
 
     p.add_argument("--data_root", type=str, required=True)
-
-    # IMPORTANT: use lowercase to match your folder names (amazon/dslr/webcam)
     p.add_argument("--source", type=str, required=True, choices=["amazon", "dslr", "webcam"])
     p.add_argument("--target", type=str, required=True, choices=["amazon", "dslr", "webcam"])
 
-    p.add_argument("--arch", type=str, default="alexnet", choices=["alexnet"])
-    p.add_argument("--bottleneck_dim", type=int, default=256)
-
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--num_workers", type=int, default=4)
+    p.add_argument("--seed", type=int, default=42)
 
-    # Paper/table-style: fixed shared-10 list
     p.add_argument("--partial_mode", type=str, default="office_caltech_10", choices=["office_caltech_10"])
 
     # Stage 1
@@ -557,13 +556,12 @@ def parse_args():
     p.add_argument("--lr_cls", type=float, default=1e-3)
 
     # Stage 2
-    p.add_argument("--epochs_da", type=int, default=250)
+    p.add_argument("--epochs_da", type=int, default=25)  # many repos use 25 for Office31; keep 250 if you want
     p.add_argument("--lr_da", type=float, default=1e-3)
     p.add_argument("--lambda_upper", type=float, default=0.1)
-    p.add_argument("--alpha", type=float, default=1.0)
+    p.add_argument("--alpha", type=float, default=10.0)      # often 10 in DANN-style schedules; 1.0 is very mild
     p.add_argument("--entropy_weight", type=float, default=0.0)
 
-    # Optional: disable ImageNet preload
     p.add_argument("--no_pretrained", action="store_true")
 
     return p.parse_args()
@@ -572,7 +570,10 @@ def parse_args():
 def main():
     args = parse_args()
     if args.source == args.target:
-        raise ValueError("source and target must be different domains to match A→W, D→W, etc.")
+        raise ValueError("source and target must be different (A→W, D→W, etc).")
+
+    set_seed(args.seed)
+    torch.backends.cudnn.benchmark = True
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
@@ -595,12 +596,12 @@ def main():
     print(f"Target test images  (shared-10): {len(tgt_test.dataset)}\n")
 
     model = IWANClassifier(
-        num_classes=num_classes,                  # 31-way classifier
-        bottleneck_dim=args.bottleneck_dim,
+        num_classes=num_classes,
+        bottleneck_dim=256,
         pretrained=not args.no_pretrained,
     )
 
-    # ---------------- Stage 1: AlexNet+bottleneck baseline ----------------
+    # ---------------- Stage 1 baseline ----------------
     print("==> Stage 1: Source training (AlexNet+bottleneck baseline)")
     model = train_source(
         model=model,
@@ -610,11 +611,10 @@ def main():
         lr=args.lr_cls,
     )
 
-    # Baseline evaluation on target shared-10
     tgt_acc_pre = eval_acc(model, tgt_test, device)
     print(f"\n[Baseline: AlexNet+bottleneck] tgt_test_acc(shared-10) = {tgt_acc_pre:.4f}\n")
 
-    # ---------------- Stage 2: IWAN (proposed) ----------------
+    # ---------------- Stage 2 IWAN ----------------
     print("==> Stage 2: IWAN adaptation (unlabeled target train, report target TEST shared-10)")
     model = train_iwan(
         model=model,
@@ -631,7 +631,6 @@ def main():
     tgt_acc_post = eval_acc(model, tgt_test, device)
     print(f"\n[After IWAN] tgt_test_acc(shared-10) = {tgt_acc_post:.4f}\n")
 
-    print("Done.")
     print("Interpretation:")
     print("- Baseline line corresponds to 'AlexNet+bottleneck'")
     print("- IWAN with entropy_weight=0.0 corresponds to 'proposed (γ=0)'")
