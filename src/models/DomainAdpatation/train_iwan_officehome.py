@@ -292,8 +292,8 @@ def make_loaders_optionA(
     tgt_train_full = Office31Domain(tgt_root, source_class_to_idx, transform=train_tf)
     tgt_test_full  = Office31Domain(tgt_root, source_class_to_idx, transform=test_tf)
 
-    # Keep FULL target train (includes outlier classes) for true PDA; evaluate on shared classes only.
-    tgt_train_ds = tgt_train_full
+    # Target in PDA contains only the shared classes. Filter both train and test to shared-10.
+    tgt_train_ds = FilterByClassIDs(tgt_train_full, keep_ids)
     tgt_test_ds  = FilterByClassIDs(tgt_test_full, keep_ids)
 
     # Split source into train/val for monitoring
@@ -377,7 +377,8 @@ def build_optimizer_and_sched(params, lr: float, steps_total: int):
     # this helps small Office31 stabilize; many baselines use step decay, cosine also works well
     if steps_total <= 0:
         steps_total = 1
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps_total)
+    # prevent LR from collapsing to exact 0; keep a small floor at 1% of initial LR
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps_total, eta_min=lr * 0.01)
     return opt, sched
 
 
@@ -459,6 +460,7 @@ def train_iwan(
     lambda_upper: float,
     alpha: float,
     entropy_weight: float,
+    wandb_run=None,
 ):
     """
     IWAN (fixed):
@@ -702,7 +704,7 @@ def main():
     print("Shared-10 classes:", shared_names)
     print(f"Source train images: {len(src_train.dataset)}")
     print(f"Source val images: {len(src_val.dataset)}")
-    print(f"Target train images (full target, includes outlier classes): {len(tgt_train.dataset)}")
+    print(f"Target train images (shared-10 only): {len(tgt_train.dataset)}")
     print(f"Target test images  (shared-10): {len(tgt_test.dataset)}\n")
 
     model = IWANClassifier(
