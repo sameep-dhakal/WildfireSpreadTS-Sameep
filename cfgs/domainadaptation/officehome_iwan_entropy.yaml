@@ -13,8 +13,8 @@ metric:
 
 parameters:
   data_root: {value: /develop/data/Office-31}
-  source: {values: [amazon, webcam, dslr]}
-  target: {values: [dslr, webcam, amazon]}
+  source: {values: [amazon, webcam]}
+  target: {values: [dslr]}
 
   batch_size: {value: 64}
   num_workers: {value: 4}
