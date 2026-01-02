@@ -31,3 +31,5 @@ parameters:
   lambda_upper: {value: 0.1}
   alpha: {values: [10.0, 1.0]}
   entropy_weight: {values: [0.0, 0.01, 0.1]}
+
+  src_val_ratio: {value: 0.1}

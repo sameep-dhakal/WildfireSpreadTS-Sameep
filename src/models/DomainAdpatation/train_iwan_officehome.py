@@ -227,7 +227,9 @@ def make_loaders_optionA(
     batch_size: int,
     num_workers: int,
     partial_mode: str,
-) -> Tuple[DataLoader, DataLoader, DataLoader, int, List[str]]:
+    src_val_ratio: float,
+    split_seed: int,
+) -> Tuple[DataLoader, DataLoader, DataLoader, DataLoader, int, List[str]]:
 
     normalize = T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
@@ -259,7 +261,8 @@ def make_loaders_optionA(
     num_classes = len(src_probe.classes)
 
     # full source (31 classes)
-    src_ds = Office31Domain(src_root, source_class_to_idx, transform=train_tf)
+    src_ds_train_tf = Office31Domain(src_root, source_class_to_idx, transform=train_tf)
+    src_ds_val_tf   = Office31Domain(src_root, source_class_to_idx, transform=test_tf)
 
     # shared-10 filtering on target
     shared_names = get_shared10_list(partial_mode)
@@ -278,9 +281,27 @@ def make_loaders_optionA(
     tgt_train_ds = tgt_train_full
     tgt_test_ds  = FilterByClassIDs(tgt_test_full, keep_ids)
 
+    # Split source into train/val for monitoring
+    n_src = len(src_ds_train_tf)
+    n_val = int(round(n_src * src_val_ratio))
+    n_val = min(max(n_val, 1), n_src - 1)  # keep both splits non-empty
+    n_train = n_src - n_val
+    g = torch.Generator()
+    g.manual_seed(split_seed)
+    indices = torch.randperm(n_src, generator=g).tolist()
+    train_idx = indices[:n_train]
+    val_idx = indices[n_train:]
+
+    src_train_ds = SubDataset(src_ds_train_tf, train_idx)
+    src_val_ds   = SubDataset(src_ds_val_tf, val_idx)
+
     src_train = DataLoader(
-        src_ds, batch_size=batch_size, shuffle=True,
+        src_train_ds, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, drop_last=True, pin_memory=True
+    )
+    src_val = DataLoader(
+        src_val_ds, batch_size=batch_size, shuffle=False,
+        num_workers=num_workers, drop_last=False, pin_memory=True
     )
     tgt_train = DataLoader(
         tgt_train_ds, batch_size=batch_size, shuffle=True,
@@ -291,7 +312,7 @@ def make_loaders_optionA(
         num_workers=num_workers, drop_last=False, pin_memory=True
     )
 
-    return src_train, tgt_train, tgt_test, num_classes, shared_names
+    return src_train, src_val, tgt_train, tgt_test, num_classes, shared_names
 
 
 # -------------------------------
@@ -413,6 +434,7 @@ def train_source(
 def train_iwan(
     model: IWANClassifier,
     src_train: DataLoader,
+    src_val: DataLoader,
     tgt_train: DataLoader,
     device: torch.device,
     epochs: int,
@@ -467,6 +489,9 @@ def train_iwan(
     opt_main, sched_main = build_optimizer_and_sched(main_params, lr=lr, steps_total=total_steps)
 
     global_step = 0
+
+    best = float("inf")
+    best_state = None
 
     for ep in range(epochs):
         model.train()
@@ -575,15 +600,23 @@ def train_iwan(
                 "lr_main": float(sched_main.get_last_lr()[0]),
             }
 
+        # monitor on source val
+        src_ce = eval_ce(model, src_val, device)
         print(
             f"[DA] ep {ep+1:03d}/{epochs} "
             f"D={last['loss_D']:.4f} adv={last['loss_adv']:.4f} cls={last['loss_cls']:.4f} "
             f"ent={last['loss_ent']:.4f} lam={last['lam']:.4f} "
             f"w_mean={last['w_mean']:.4f} w_std={last['w_std']:.4f} "
             f"w_min={last['w_min']:.4f} w_max={last['w_max']:.4f} "
-            f"lr={last['lr_main']:.6f}"
+            f"lr={last['lr_main']:.6f} src_val_ce={src_ce:.4f}"
         )
 
+        if src_ce < best:
+            best = src_ce
+            best_state = deepcopy(model.state_dict())
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
     return model
 
 
@@ -600,6 +633,8 @@ def parse_args():
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--num_workers", type=int, default=4)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--src_val_ratio", type=float, default=0.2, help="Source hold-out fraction for validation.")
+    p.add_argument("--split_seed", type=int, default=42, help="Seed for source train/val split.")
 
     p.add_argument("--partial_mode", type=str, default="office_caltech_10", choices=["office_caltech_10"])
 
@@ -608,7 +643,7 @@ def parse_args():
     p.add_argument("--lr_cls", type=float, default=1e-3)
 
     # Stage 2
-    p.add_argument("--epochs_da", type=int, default=25)  # many repos use 25 for Office31; keep 250 if you want
+    p.add_argument("--epochs_da", type=int, default=250)  # use 250 to match table; lower only for quick debug
     p.add_argument("--lr_da", type=float, default=1e-3)
     p.add_argument("--lambda_upper", type=float, default=0.1)
     p.add_argument("--alpha", type=float, default=10.0)      # often 10 in DANN-style schedules; 1.0 is very mild
@@ -630,13 +665,15 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
 
-    src_train, tgt_train, tgt_test, num_classes, shared_names = make_loaders_optionA(
+    src_train, src_val, tgt_train, tgt_test, num_classes, shared_names = make_loaders_optionA(
         data_root=args.data_root,
         source=args.source,
         target=args.target,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
         partial_mode=args.partial_mode,
+        src_val_ratio=args.src_val_ratio,
+        split_seed=args.split_seed,
     )
 
     print("\n== Setup ==")
@@ -644,7 +681,8 @@ def main():
     print(f"Target domain: {args.target} (train unlabeled + test on shared-10 only)")
     print("Shared-10 classes:", shared_names)
     print(f"Source train images: {len(src_train.dataset)}")
-    print(f"Target train images (shared-10): {len(tgt_train.dataset)}")
+    print(f"Source val images: {len(src_val.dataset)}")
+    print(f"Target train images (full target, includes outlier classes): {len(tgt_train.dataset)}")
     print(f"Target test images  (shared-10): {len(tgt_test.dataset)}\n")
 
     model = IWANClassifier(
@@ -658,6 +696,7 @@ def main():
     model = train_source(
         model=model,
         src_train=src_train,
+        src_val=src_val,
         device=device,
         epochs=args.epochs_cls,
         lr=args.lr_cls,
@@ -671,6 +710,7 @@ def main():
     model = train_iwan(
         model=model,
         src_train=src_train,
+        src_val=src_val,
         tgt_train=tgt_train,
         device=device,
         epochs=args.epochs_da,
