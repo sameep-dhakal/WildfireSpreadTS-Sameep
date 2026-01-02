@@ -35,6 +35,8 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as T
 from torch.utils.data import DataLoader, Dataset
+from PIL import Image, UnidentifiedImageError
+
 
 
 # -------------------------------
@@ -140,30 +142,48 @@ class DomainDiscriminator(nn.Module):
 # -------------------------------
 # Data
 # -------------------------------
+
+
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp"}
+
+def is_valid_image_path(p: str) -> bool:
+    base = os.path.basename(p)
+    if base.startswith("._") or base == ".DS_Store":
+        return False
+    ext = os.path.splitext(base)[1].lower()
+    return ext in IMG_EXTS
+
+
 class Office31Domain(Dataset):
-    """
-    ImageFolder wrapper with labels forced to SOURCE domain class_to_idx
-    so IDs are consistent across domains.
-    """
     def __init__(self, domain_root: str, source_class_to_idx: Dict[str, int], transform):
-        inner = torchvision.datasets.ImageFolder(domain_root, transform=transform)
+        self.inner = torchvision.datasets.ImageFolder(domain_root, transform=None)
         self.source_class_to_idx = source_class_to_idx
+        self.transform = transform
+        self.loader = self.inner.loader
 
         self.samples: List[Tuple[str, int]] = []
-        for path, y_inner in inner.samples:
-            cls_name = inner.classes[y_inner]
+        for path, y_inner in self.inner.samples:
+            if not is_valid_image_path(path):
+                continue
+            cls_name = self.inner.classes[y_inner]
             if cls_name in source_class_to_idx:
                 self.samples.append((path, source_class_to_idx[cls_name]))
 
-        self.loader = inner.loader
-        self.transform = transform
+        if len(self.samples) == 0:
+            raise RuntimeError(f"No valid images found under {domain_root}. Check dataset structure.")
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx):
         path, y = self.samples[idx]
-        x = self.loader(path)
+        try:
+            x = self.loader(path)
+        except (UnidentifiedImageError, OSError):
+            # If something slips through, fall back to another sample instead of crashing the run
+            new_idx = (idx + 1) % len(self.samples)
+            return self.__getitem__(new_idx)
+
         if self.transform is not None:
             x = self.transform(x)
         return x, y
