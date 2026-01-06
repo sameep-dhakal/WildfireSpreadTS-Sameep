@@ -86,22 +86,22 @@ def grad_reverse(x, lambd: float):
 # AlexNet feature extractor
 # -------------------------------
 class AlexNetFeat(nn.Module):
-    """Returns a 4096-d feature (fc7 output) from ImageNet pretrained AlexNet."""
+    """Returns a 4096-d feature (fc7 ReLU output) from ImageNet pretrained AlexNet."""
     def __init__(self, pretrained: bool = True):
         super().__init__()
         weights = torchvision.models.AlexNet_Weights.IMAGENET1K_V1 if pretrained else None
         net = torchvision.models.alexnet(weights=weights)
+
         self.features = net.features
         self.avgpool = net.avgpool
-        # up to fc7 relu (Dropout, fc6, relu, Dropout, fc7, relu)
-        self.classifier_prefix = nn.Sequential(*list(net.classifier.children())[:6])
+        self.fc7 = nn.Sequential(*list(net.classifier.children())[:6])  # up to fc7 ReLU
         self.out_dim = 4096
 
     def forward(self, x):
         x = self.features(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = self.classifier_prefix(x)
+        x = self.fc7(x)  # (B, 4096)
         return x
 
 
@@ -112,24 +112,30 @@ class IWANClassifier(nn.Module):
         self.backbone = AlexNetFeat(pretrained=pretrained)
         in_dim = self.backbone.out_dim
 
-        if bottleneck_dim is not None and bottleneck_dim > 0:
-            self.bottleneck = nn.Sequential(
-                nn.Linear(in_dim, bottleneck_dim),
+        # if bottleneck_dim is not None and bottleneck_dim > 0:
+        #     self.bottleneck = nn.Sequential(
+        #         nn.Linear(in_dim, bottleneck_dim),
+        #         nn.ReLU(inplace=True),
+        #         nn.Dropout(p=0.5),
+        #     )
+        #     feat_dim = bottleneck_dim
+        # else:
+        #     self.bottleneck = None
+        #     feat_dim = in_dim
+
+        self.bottleneck = nn.Sequential(
+                nn.Linear(in_dim, 256),
                 nn.ReLU(inplace=True),
                 nn.Dropout(p=0.5),
             )
-            feat_dim = bottleneck_dim
-        else:
-            self.bottleneck = None
-            feat_dim = in_dim
-
+        feat_dim = 256
+    
         self.classifier = nn.Linear(feat_dim, num_classes)
         self.feat_dim = feat_dim
 
     def feats(self, x):
         z = self.backbone(x)
-        if self.bottleneck is not None:
-            z = self.bottleneck(z)
+        z = self.bottleneck(z)
         return z
 
     def forward(self, x):
@@ -772,14 +778,18 @@ def main():
     print("- IWAN with entropy_weight>0 corresponds to 'proposed' (with target entropy minimization)")
 
     if wandb_run is not None:
-        wandb_run.log(
-            {
-                "src_val_ce_best": getattr(model, "src_best_ce", None),
-                "tgt_test_acc_pre": tgt_acc_pre,
-                "tgt_test_acc_post": tgt_acc_post,
-            }
-        )
-        wandb_run.finish()
+        try:
+            wandb_run.log(
+                {
+                    "src_val_ce_best": getattr(model, "src_best_ce", None),
+                    "tgt_test_acc_pre": tgt_acc_pre,
+                    "tgt_test_acc_post": tgt_acc_post,
+                }
+            )
+            wandb_run.finish()
+        except FileNotFoundError:
+            # can happen if CWD vanishes in sweep/agent teardown; avoid hard crash
+            pass
 
 
 if __name__ == "__main__":
