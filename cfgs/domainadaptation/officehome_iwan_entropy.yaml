@@ -29,7 +29,7 @@ parameters:
   lr_da: {values: [0.0005]}
 
   lambda_upper: {value: 0.1}
-  alpha: {values: [10.0]}
+  alpha: {values: [1.0]}
   entropy_weight: {values: [0.0]}
 
   src_val_ratio: {value: 0.0}
